@@ -214,7 +214,7 @@ const curl = new Curl();
 const chunks: Buffer[] = [];
 
 try {
-  curl.setOpt(CurlOpt.CURLOPT_URL, "https://example.com");
+  curl.setOpt(CurlOpt.URL, "https://example.com");
   curl.setWriteFunction((chunk) => chunks.push(Buffer.from(chunk)));
 
   // Browser impersonation (requires curl-impersonate)

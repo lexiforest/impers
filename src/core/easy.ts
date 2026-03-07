@@ -153,77 +153,77 @@ export class Curl {
    * Get response status code
    */
   getResponseCode(): number {
-    return this.getInfo(CurlInfo.CURLINFO_RESPONSE_CODE) as number;
+    return this.getInfo(CurlInfo.RESPONSE_CODE) as number;
   }
 
   /**
    * Get effective URL (after redirects)
    */
   getEffectiveUrl(): string | null {
-    return this.getInfo(CurlInfo.CURLINFO_EFFECTIVE_URL) as string | null;
+    return this.getInfo(CurlInfo.EFFECTIVE_URL) as string | null;
   }
 
   /**
    * Get content type from response
    */
   getContentType(): string | null {
-    return this.getInfo(CurlInfo.CURLINFO_CONTENT_TYPE) as string | null;
+    return this.getInfo(CurlInfo.CONTENT_TYPE) as string | null;
   }
 
   /**
    * Get total transfer time in seconds
    */
   getTotalTime(): number {
-    return this.getInfo(CurlInfo.CURLINFO_TOTAL_TIME) as number;
+    return this.getInfo(CurlInfo.TOTAL_TIME) as number;
   }
 
   /**
    * Get primary IP address
    */
   getPrimaryIp(): string | null {
-    return this.getInfo(CurlInfo.CURLINFO_PRIMARY_IP) as string | null;
+    return this.getInfo(CurlInfo.PRIMARY_IP) as string | null;
   }
 
   /**
    * Get primary port
    */
   getPrimaryPort(): number {
-    return this.getInfo(CurlInfo.CURLINFO_PRIMARY_PORT) as number;
+    return this.getInfo(CurlInfo.PRIMARY_PORT) as number;
   }
 
   /**
    * Get local IP address
    */
   getLocalIp(): string | null {
-    return this.getInfo(CurlInfo.CURLINFO_LOCAL_IP) as string | null;
+    return this.getInfo(CurlInfo.LOCAL_IP) as string | null;
   }
 
   /**
    * Get local port
    */
   getLocalPort(): number {
-    return this.getInfo(CurlInfo.CURLINFO_LOCAL_PORT) as number;
+    return this.getInfo(CurlInfo.LOCAL_PORT) as number;
   }
 
   /**
    * Get redirect count
    */
   getRedirectCount(): number {
-    return this.getInfo(CurlInfo.CURLINFO_REDIRECT_COUNT) as number;
+    return this.getInfo(CurlInfo.REDIRECT_COUNT) as number;
   }
 
   /**
    * Get redirect URL (if any)
    */
   getRedirectUrl(): string | null {
-    return this.getInfo(CurlInfo.CURLINFO_REDIRECT_URL) as string | null;
+    return this.getInfo(CurlInfo.REDIRECT_URL) as string | null;
   }
 
   /**
    * Get HTTP version used
    */
   getHttpVersion(): number {
-    return this.getInfo(CurlInfo.CURLINFO_HTTP_VERSION) as number;
+    return this.getInfo(CurlInfo.HTTP_VERSION) as number;
   }
 
   /**
@@ -232,7 +232,7 @@ export class Curl {
   setWriteFunction(fn: WriteCallback): void {
     const cb = wrapWriteCallback(fn);
     this._callbacks.push(cb);
-    this.setOpt(CurlOpt.CURLOPT_WRITEFUNCTION, cb);
+    this.setOpt(CurlOpt.WRITEFUNCTION, cb);
   }
 
   /**
@@ -241,7 +241,7 @@ export class Curl {
   setHeaderFunction(fn: WriteCallback): void {
     const cb = wrapWriteCallback(fn);
     this._callbacks.push(cb);
-    this.setOpt(CurlOpt.CURLOPT_HEADERFUNCTION, cb);
+    this.setOpt(CurlOpt.HEADERFUNCTION, cb);
   }
 
   /**
@@ -255,7 +255,7 @@ export class Curl {
     const list = new SList();
     headers.forEach((header) => list.append(header));
     this._slists.push(list);
-    this.setOpt(CurlOpt.CURLOPT_HTTPHEADER, list.pointer);
+    this.setOpt(CurlOpt.HTTPHEADER, list.pointer);
   }
 
   /**

@@ -90,10 +90,10 @@ export class AsyncWebSocket {
     this.ownMulti = false;
 
     // Configure WebSocket URL (curl expects ws:// or wss:// scheme)
-    this.curl.setOpt(CurlOpt.CURLOPT_URL, url);
+    this.curl.setOpt(CurlOpt.URL, url);
 
     // Enable WebSocket upgrade
-    this.curl.setOpt(CurlOpt.CURLOPT_CONNECT_ONLY, 2); // 2 = WebSocket mode
+    this.curl.setOpt(CurlOpt.CONNECT_ONLY, 2); // 2 = WebSocket mode
 
     // Set headers
     if (options.headers) {
@@ -104,7 +104,7 @@ export class AsyncWebSocket {
 
     // Set timeout
     if (options.timeout) {
-      this.curl.setOpt(CurlOpt.CURLOPT_TIMEOUT, options.timeout);
+      this.curl.setOpt(CurlOpt.TIMEOUT, options.timeout);
     }
   }
 

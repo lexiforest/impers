@@ -147,7 +147,7 @@ export function setJa3Options(curl: Curl, ja3: string, permute: boolean = false)
     throw new FingerprintError(`Unknown TLS version: ${tlsVersion} (0x${tlsVersionNum.toString(16)})`);
   }
   // Combine with MAX_DEFAULT to allow negotiation up to the highest supported version
-  curl.setOpt(CurlOpt.CURLOPT_SSLVERSION, curlTlsVersion | CurlSslVersion.CURL_SSLVERSION_MAX_DEFAULT);
+  curl.setOpt(CurlOpt.SSLVERSION, curlTlsVersion | CurlSslVersion.CURL_SSLVERSION_MAX_DEFAULT);
 
   // Set cipher suites
   const cipherNames: string[] = [];
@@ -163,7 +163,7 @@ export function setJa3Options(curl: Curl, ja3: string, permute: boolean = false)
     cipherNames.push(cipherName);
   }
   if (cipherNames.length > 0) {
-    curl.setOpt(CurlOpt.CURLOPT_SSL_CIPHER_LIST, cipherNames.join(":"));
+    curl.setOpt(CurlOpt.SSL_CIPHER_LIST, cipherNames.join(":"));
   }
 
   // Process extensions
@@ -205,7 +205,7 @@ export function setJa3Options(curl: Curl, ja3: string, permute: boolean = false)
     curveNames.push(curveName);
   }
   if (curveNames.length > 0) {
-    curl.setOpt(CurlOpt.CURLOPT_SSL_EC_CURVES, curveNames.join(":"));
+    curl.setOpt(CurlOpt.SSL_EC_CURVES, curveNames.join(":"));
   }
 
   // Verify curve formats (only 0 is supported)
@@ -235,7 +235,7 @@ export function setAkamaiOptions(curl: Curl, akamai: string): void {
   const [settings, windowUpdate, streams, headerOrder] = parts;
 
   // Force HTTP/2
-  curl.setOpt(CurlOpt.CURLOPT_HTTP_VERSION, CurlHttpVersion.CURL_HTTP_VERSION_2_0);
+  curl.setOpt(CurlOpt.HTTP_VERSION, CurlHttpVersion.CURL_HTTP_VERSION_2_0);
 
   // Set HTTP/2 SETTINGS frame values
   // Convert comma format to semicolon format for libcurl compatibility
@@ -279,7 +279,7 @@ export function setExtraFingerprintOptions(curl: Curl, fp: ExtraFingerprint): vo
 
   // TLS supported groups (elliptic curves)
   if (fp.tlsSupportedGroups && fp.tlsSupportedGroups.length > 0) {
-    curl.setOpt(CurlOpt.CURLOPT_SSL_EC_CURVES, fp.tlsSupportedGroups.join(":"));
+    curl.setOpt(CurlOpt.SSL_EC_CURVES, fp.tlsSupportedGroups.join(":"));
   }
 
   // HTTP/2 settings
@@ -353,7 +353,7 @@ function toggleExtension(curl: Curl, extensionId: number, enable: boolean): void
   switch (extensionId) {
     // ECH - Encrypted Client Hello
     case 65037:
-      curl.setOpt(CurlOpt.CURLOPT_ECH, enable ? "grease" : "");
+      curl.setOpt(CurlOpt.ECH, enable ? "grease" : "");
       break;
 
     // Certificate compression
@@ -377,7 +377,7 @@ function toggleExtension(curl: Curl, extensionId: number, enable: boolean): void
 
     // ALPN - Application Layer Protocol Negotiation
     case 16:
-      curl.setOpt(CurlOpt.CURLOPT_SSL_ENABLE_ALPN, enable ? 1 : 0);
+      curl.setOpt(CurlOpt.SSL_ENABLE_ALPN, enable ? 1 : 0);
       break;
 
     // OCSP Status Request

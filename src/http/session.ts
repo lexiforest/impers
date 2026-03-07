@@ -112,7 +112,7 @@ export class Session {
 
     try {
       // Set URL
-      curl.setOpt(CurlOpt.CURLOPT_URL, resolvedUrl);
+      curl.setOpt(CurlOpt.URL, resolvedUrl);
 
       // Set method
       this.setMethod(curl, method.toUpperCase(), mergedOptions);
@@ -123,13 +123,13 @@ export class Session {
         const slist = new SList();
         headerList.forEach((h) => slist.append(h));
         slists.push(slist);
-        curl.setOpt(CurlOpt.CURLOPT_HTTPHEADER, slist.pointer);
+        curl.setOpt(CurlOpt.HTTPHEADER, slist.pointer);
       }
 
       // Set cookies
       const cookieHeader = this.buildCookieHeader(resolvedUrl, mergedOptions);
       if (cookieHeader) {
-        curl.setOpt(CurlOpt.CURLOPT_COOKIE, cookieHeader);
+        curl.setOpt(CurlOpt.COOKIE, cookieHeader);
       }
 
       // Set body
@@ -385,28 +385,28 @@ export class Session {
   private setMethod(curl: Curl, method: string, options: RequestOptions): void {
     switch (method) {
       case "GET":
-        curl.setOpt(CurlOpt.CURLOPT_HTTPGET, 1);
+        curl.setOpt(CurlOpt.HTTPGET, 1);
         break;
       case "POST":
-        curl.setOpt(CurlOpt.CURLOPT_POST, 1);
+        curl.setOpt(CurlOpt.POST, 1);
         break;
       case "HEAD":
-        curl.setOpt(CurlOpt.CURLOPT_NOBODY, 1);
+        curl.setOpt(CurlOpt.NOBODY, 1);
         break;
       case "PUT":
-        curl.setOpt(CurlOpt.CURLOPT_CUSTOMREQUEST, "PUT");
+        curl.setOpt(CurlOpt.CUSTOMREQUEST, "PUT");
         break;
       case "DELETE":
-        curl.setOpt(CurlOpt.CURLOPT_CUSTOMREQUEST, "DELETE");
+        curl.setOpt(CurlOpt.CUSTOMREQUEST, "DELETE");
         break;
       case "PATCH":
-        curl.setOpt(CurlOpt.CURLOPT_CUSTOMREQUEST, "PATCH");
+        curl.setOpt(CurlOpt.CUSTOMREQUEST, "PATCH");
         break;
       case "OPTIONS":
-        curl.setOpt(CurlOpt.CURLOPT_CUSTOMREQUEST, "OPTIONS");
+        curl.setOpt(CurlOpt.CUSTOMREQUEST, "OPTIONS");
         break;
       default:
-        curl.setOpt(CurlOpt.CURLOPT_CUSTOMREQUEST, method);
+        curl.setOpt(CurlOpt.CUSTOMREQUEST, method);
     }
   }
 
@@ -506,8 +506,8 @@ export class Session {
     }
 
     if (body) {
-      curl.setOpt(CurlOpt.CURLOPT_POSTFIELDS, body);
-      curl.setOpt(CurlOpt.CURLOPT_POSTFIELDSIZE, body.length);
+      curl.setOpt(CurlOpt.POSTFIELDS, body);
+      curl.setOpt(CurlOpt.POSTFIELDSIZE, body.length);
     }
 
     // TODO: Handle multipart/files with CurlMime
@@ -521,22 +521,22 @@ export class Session {
 
     if (typeof options.auth === "string") {
       // "username:password" format
-      curl.setOpt(CurlOpt.CURLOPT_USERPWD, options.auth);
+      curl.setOpt(CurlOpt.USERPWD, options.auth);
     } else if ("token" in options.auth) {
       // Bearer token
       const bearer = options.auth as BearerAuth;
-      curl.setOpt(CurlOpt.CURLOPT_XOAUTH2_BEARER, bearer.token);
-      curl.setOpt(CurlOpt.CURLOPT_HTTPAUTH, CurlAuth.CURLAUTH_BEARER);
+      curl.setOpt(CurlOpt.XOAUTH2_BEARER, bearer.token);
+      curl.setOpt(CurlOpt.HTTPAUTH, CurlAuth.CURLAUTH_BEARER);
     } else if ("type" in options.auth && options.auth.type === "digest") {
       // Digest auth
       const digest = options.auth as DigestAuth;
-      curl.setOpt(CurlOpt.CURLOPT_USERPWD, `${digest.username}:${digest.password}`);
-      curl.setOpt(CurlOpt.CURLOPT_HTTPAUTH, CurlAuth.CURLAUTH_DIGEST);
+      curl.setOpt(CurlOpt.USERPWD, `${digest.username}:${digest.password}`);
+      curl.setOpt(CurlOpt.HTTPAUTH, CurlAuth.CURLAUTH_DIGEST);
     } else {
       // Basic auth (default)
       const basic = options.auth as BasicAuth;
-      curl.setOpt(CurlOpt.CURLOPT_USERPWD, `${basic.username}:${basic.password}`);
-      curl.setOpt(CurlOpt.CURLOPT_HTTPAUTH, CurlAuth.CURLAUTH_BASIC);
+      curl.setOpt(CurlOpt.USERPWD, `${basic.username}:${basic.password}`);
+      curl.setOpt(CurlOpt.HTTPAUTH, CurlAuth.CURLAUTH_BASIC);
     }
   }
 
@@ -547,12 +547,12 @@ export class Session {
     const proxy = options.proxy || options.proxies?.all || options.proxies?.https || options.proxies?.http;
 
     if (proxy) {
-      curl.setOpt(CurlOpt.CURLOPT_PROXY, proxy);
+      curl.setOpt(CurlOpt.PROXY, proxy);
     }
 
     if (options.proxyAuth) {
       curl.setOpt(
-        CurlOpt.CURLOPT_PROXYUSERPWD,
+        CurlOpt.PROXYUSERPWD,
         `${options.proxyAuth.username}:${options.proxyAuth.password}`
       );
     }
@@ -564,30 +564,30 @@ export class Session {
   private setSslOptions(curl: Curl, options: RequestOptions): void {
     // SSL verification
     if (options.verify === false) {
-      curl.setOpt(CurlOpt.CURLOPT_SSL_VERIFYPEER, 0);
-      curl.setOpt(CurlOpt.CURLOPT_SSL_VERIFYHOST, 0);
+      curl.setOpt(CurlOpt.SSL_VERIFYPEER, 0);
+      curl.setOpt(CurlOpt.SSL_VERIFYHOST, 0);
     } else {
-      curl.setOpt(CurlOpt.CURLOPT_SSL_VERIFYPEER, 1);
-      curl.setOpt(CurlOpt.CURLOPT_SSL_VERIFYHOST, 2);
+      curl.setOpt(CurlOpt.SSL_VERIFYPEER, 1);
+      curl.setOpt(CurlOpt.SSL_VERIFYHOST, 2);
     }
 
     // CA certificate
     if (options.caCert) {
-      curl.setOpt(CurlOpt.CURLOPT_CAINFO, options.caCert);
+      curl.setOpt(CurlOpt.CAINFO, options.caCert);
     }
 
     // Client certificate
     if (options.cert) {
       if (typeof options.cert === "string") {
-        curl.setOpt(CurlOpt.CURLOPT_SSLCERT, options.cert);
+        curl.setOpt(CurlOpt.SSLCERT, options.cert);
       } else {
         const certConfig = options.cert as CertConfig;
-        curl.setOpt(CurlOpt.CURLOPT_SSLCERT, certConfig.cert);
+        curl.setOpt(CurlOpt.SSLCERT, certConfig.cert);
         if (certConfig.key) {
-          curl.setOpt(CurlOpt.CURLOPT_SSLKEY, certConfig.key);
+          curl.setOpt(CurlOpt.SSLKEY, certConfig.key);
         }
         if (certConfig.password) {
-          curl.setOpt(CurlOpt.CURLOPT_KEYPASSWD, certConfig.password);
+          curl.setOpt(CurlOpt.KEYPASSWD, certConfig.password);
         }
       }
     }
@@ -599,11 +599,11 @@ export class Session {
   private setTimeouts(curl: Curl, options: RequestOptions): void {
     if (options.timeout !== undefined) {
       // Convert seconds to milliseconds
-      curl.setOpt(CurlOpt.CURLOPT_TIMEOUT_MS, Math.floor(options.timeout * 1000));
+      curl.setOpt(CurlOpt.TIMEOUT_MS, Math.floor(options.timeout * 1000));
     }
 
     if (options.connectTimeout !== undefined) {
-      curl.setOpt(CurlOpt.CURLOPT_CONNECTTIMEOUT_MS, Math.floor(options.connectTimeout * 1000));
+      curl.setOpt(CurlOpt.CONNECTTIMEOUT_MS, Math.floor(options.connectTimeout * 1000));
     }
   }
 
@@ -612,11 +612,11 @@ export class Session {
    */
   private setRedirects(curl: Curl, options: RequestOptions): void {
     const allowRedirects = options.allowRedirects !== false;
-    curl.setOpt(CurlOpt.CURLOPT_FOLLOWLOCATION, allowRedirects ? 1 : 0);
+    curl.setOpt(CurlOpt.FOLLOWLOCATION, allowRedirects ? 1 : 0);
 
     if (allowRedirects) {
       const maxRedirects = options.maxRedirects ?? 30;
-      curl.setOpt(CurlOpt.CURLOPT_MAXREDIRS, maxRedirects);
+      curl.setOpt(CurlOpt.MAXREDIRS, maxRedirects);
     }
   }
 
@@ -628,16 +628,16 @@ export class Session {
 
     switch (options.httpVersion) {
       case "1.0":
-        curl.setOpt(CurlOpt.CURLOPT_HTTP_VERSION, CurlHttpVersion.CURL_HTTP_VERSION_1_0);
+        curl.setOpt(CurlOpt.HTTP_VERSION, CurlHttpVersion.CURL_HTTP_VERSION_1_0);
         break;
       case "1.1":
-        curl.setOpt(CurlOpt.CURLOPT_HTTP_VERSION, CurlHttpVersion.CURL_HTTP_VERSION_1_1);
+        curl.setOpt(CurlOpt.HTTP_VERSION, CurlHttpVersion.CURL_HTTP_VERSION_1_1);
         break;
       case "2":
-        curl.setOpt(CurlOpt.CURLOPT_HTTP_VERSION, CurlHttpVersion.CURL_HTTP_VERSION_2_0);
+        curl.setOpt(CurlOpt.HTTP_VERSION, CurlHttpVersion.CURL_HTTP_VERSION_2_0);
         break;
       case "3":
-        curl.setOpt(CurlOpt.CURLOPT_HTTP_VERSION, CurlHttpVersion.CURL_HTTP_VERSION_3);
+        curl.setOpt(CurlOpt.HTTP_VERSION, CurlHttpVersion.CURL_HTTP_VERSION_3);
         break;
     }
   }
@@ -647,15 +647,15 @@ export class Session {
    */
   private setInterface(curl: Curl, options: RequestOptions): void {
     if (options.interface) {
-      curl.setOpt(CurlOpt.CURLOPT_INTERFACE, options.interface);
+      curl.setOpt(CurlOpt.INTERFACE, options.interface);
     }
 
     if (options.localAddress) {
-      curl.setOpt(CurlOpt.CURLOPT_INTERFACE, options.localAddress);
+      curl.setOpt(CurlOpt.INTERFACE, options.localAddress);
     }
 
     if (options.localPort) {
-      curl.setOpt(CurlOpt.CURLOPT_LOCALPORT, options.localPort);
+      curl.setOpt(CurlOpt.LOCALPORT, options.localPort);
     }
   }
 
@@ -664,11 +664,11 @@ export class Session {
    */
   private setDnsOptions(curl: Curl, options: RequestOptions): void {
     if (options.dnsServers && options.dnsServers.length > 0) {
-      curl.setOpt(CurlOpt.CURLOPT_DNS_SERVERS, options.dnsServers.join(","));
+      curl.setOpt(CurlOpt.DNS_SERVERS, options.dnsServers.join(","));
     }
 
     if (options.dohUrl) {
-      curl.setOpt(CurlOpt.CURLOPT_DOH_URL, options.dohUrl);
+      curl.setOpt(CurlOpt.DOH_URL, options.dohUrl);
     }
   }
 

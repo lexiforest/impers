@@ -9,7 +9,7 @@ async function main() {
 
   try {
     // Configure the request
-    curl.setOpt(CurlOpt.CURLOPT_URL, "https://example.com");
+    curl.setOpt(CurlOpt.URL, "https://example.com");
 
     // Set up write callback to collect response data
     curl.setWriteFunction((chunk) => {

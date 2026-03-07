@@ -1,7 +1,7 @@
 {
   "name": "impers",
   "version": "0.0.1",
-  "description": "Node.js libcurl bindings using Koffi",
+  "description": "Nodejs binding for libcurl, with impersonation support.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,6 +16,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "gen:ffi-consts": "node scripts/generate-ffi-constants.js",
     "lint": "eslint .",
     "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
     "test:watch": "NODE_OPTIONS='--experimental-vm-modules' jest --watch"
