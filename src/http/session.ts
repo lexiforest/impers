@@ -193,23 +193,71 @@ export class Session {
 
       const rawHeaders: Buffer = Buffer.concat(headerChunks);
       let content: Buffer = Buffer.concat(bodyChunks);
+
+      // Split raw headers into per-response segments for redirect history
+      const segments = Headers.splitRawByResponse(rawHeaders);
+
+      // Build redirect history from intermediate responses (all except last)
+      const history: Response[] = [];
+      let currentUrl = resolvedUrl;
+
+      if (segments.length > 1) {
+        for (let i = 0; i < segments.length - 1; i++) {
+          const seg = segments[i];
+
+          const intermediateResponse = new Response({
+            headers: seg.headers,
+            requestUrl: currentUrl,
+            statusCode: seg.statusCode,
+            statusText: seg.statusText,
+            url: currentUrl,
+          });
+
+          // Update session cookies from intermediate response
+          for (const cookie of intermediateResponse.cookies) {
+            this._cookies.set(cookie.name, cookie.value, cookie);
+          }
+
+          history.push(intermediateResponse);
+
+          // Resolve next URL from Location header
+          const location = seg.headers.get("location");
+          if (location) {
+            try {
+              currentUrl = new URL(location, currentUrl).href;
+            } catch {
+              currentUrl = location;
+            }
+          }
+        }
+      }
+
+      // Use only the last segment's headers for content decoding
+      const lastSegment = segments.length > 0 ? segments[segments.length - 1] : null;
+
       if (!mergedOptions.stream && mergedOptions.decodeContent !== false) {
-        const decoded = this.decodeContent(content, Headers.fromRaw(rawHeaders).get("content-encoding"));
+        const encoding = lastSegment
+          ? lastSegment.headers.get("content-encoding")
+          : Headers.fromRaw(rawHeaders).get("content-encoding");
+        const decoded = this.decodeContent(content, encoding);
         if (decoded) {
           content = decoded;
         }
       }
 
-      // Build response
       const response = new Response({
         content,
-        rawHeaders,
+        headers: lastSegment?.headers,
         curl,
         requestUrl: resolvedUrl,
         elapsed,
+        history,
+        // Pass the resolved final URL from redirect chain, in case
+        // CURLINFO_EFFECTIVE_URL doesn't reflect the redirect target
+        url: history.length > 0 ? currentUrl : undefined,
       });
 
-      // Update session cookies from response
+      // Update session cookies from final response
       for (const cookie of response.cookies) {
         this._cookies.set(cookie.name, cookie.value, cookie);
       }
