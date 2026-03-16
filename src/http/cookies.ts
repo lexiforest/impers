@@ -43,10 +43,12 @@ export class Cookies implements Iterable<Cookie> {
   }
 
   /**
-   * Generate a unique key for a cookie
+   * Generate a unique key for a cookie.
+   * Strips leading dot from domain per RFC 6265 §5.2.3.
    */
   private makeKey(name: string, domain?: string, path?: string): string {
-    return `${domain || ""}|${path || "/"}|${name}`;
+    const normalizedDomain = domain?.replace(/^\./, "") || "";
+    return `${normalizedDomain}|${path || "/"}|${name}`;
   }
 
   /**
@@ -56,7 +58,7 @@ export class Cookies implements Iterable<Cookie> {
     const cookie: Cookie = {
       name,
       value,
-      domain: options?.domain,
+      domain: options?.domain?.replace(/^\./, "") || undefined,
       path: options?.path || "/",
       expires: options?.expires,
       maxAge: options?.maxAge,
@@ -305,7 +307,7 @@ export class Cookies implements Iterable<Cookie> {
 
     for (const cookie of this.cookies.values()) {
       const domain = cookie.domain || "";
-      const includeSubdomains = domain.startsWith(".") ? "TRUE" : "FALSE";
+      const includeSubdomains = cookie.domain ? "TRUE" : "FALSE";
       const path = cookie.path || "/";
       const secure = cookie.secure ? "TRUE" : "FALSE";
       const expires = cookie.expires
@@ -339,7 +341,7 @@ export class Cookies implements Iterable<Cookie> {
 
       switch (lowerName) {
         case "domain":
-          cookie.domain = attrValue;
+          cookie.domain = attrValue?.replace(/^\./, "") || undefined;
           break;
         case "path":
           cookie.path = attrValue;
