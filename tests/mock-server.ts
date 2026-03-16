@@ -119,6 +119,17 @@ export async function startMockServer(port = 0): Promise<number> {
     }
   });
 
+  // Redirect endpoint that sets a cookie at each hop
+  server.get<{ Params: { n: string } }>("/redirect-with-cookie/:n", async (request, reply) => {
+    const n = parseInt(request.params.n, 10);
+    reply.setCookie(`hop_${n}`, `value_${n}`, { path: "/" });
+    if (n > 0) {
+      reply.redirect(`/redirect-with-cookie/${n - 1}`);
+    } else {
+      reply.redirect("/cookies");
+    }
+  });
+
   // Absolute redirect endpoint
   server.get<{ Params: { n: string } }>("/absolute-redirect/:n", async (request, reply) => {
     const n = parseInt(request.params.n, 10);
