@@ -11,10 +11,14 @@ import { HTTPError } from "../utils/errors.js";
 export interface ResponseInit {
   content?: Buffer;
   rawHeaders?: Buffer | string;
+  headers?: Headers;
   curl?: Curl;
   requestUrl?: string;
   elapsed?: number;
   history?: Response[];
+  statusCode?: number;
+  statusText?: string;
+  url?: string;
 }
 
 /**
@@ -35,6 +39,12 @@ export class Response {
   readonly localIp: string | null;
   readonly localPort: number;
   readonly redirectCount: number;
+  /**
+   * URL of the next redirect that was NOT followed, or null if all redirects
+   * were followed. When allowRedirects is true (default), this will be null
+   * after a successful redirect chain. Use `response.url` for the final URL,
+   * or `response.history` for intermediate Response objects at each redirect step.
+   */
   readonly redirectUrl: string | null;
   readonly httpVersion: number;
   readonly contentType: string | null;
@@ -46,6 +56,7 @@ export class Response {
   private _content: Buffer | null = null;
   private _stream: AsyncIterable<Buffer> | null = null;
   private _encoding: BufferEncoding = "utf-8";
+  private readonly _statusText: string | null = null;
 
   constructor(init: ResponseInit) {
     this.requestUrl = init.requestUrl || "";
@@ -57,31 +68,18 @@ export class Response {
       this._content = init.content;
     }
 
-    // Parse headers if provided
-    if (init.rawHeaders) {
+    // Use pre-parsed headers if provided, otherwise parse from raw
+    if (init.headers) {
+      this.headers = init.headers;
+    } else if (init.rawHeaders) {
       this.headers = Headers.fromRaw(init.rawHeaders);
     } else {
       this.headers = new Headers();
     }
 
-    // Extract cookies from headers
-    this.cookies = new Cookies();
-    const setCookies = this.headers.getAll("set-cookie");
-    for (const setCookie of setCookies) {
-      try {
-        const cookie = Cookies.parseSetCookie(
-          setCookie,
-          this.requestUrl ? new URL(this.requestUrl) : undefined
-        );
-        this.cookies.set(cookie.name, cookie.value, cookie);
-      } catch {
-        // Ignore invalid cookies
-      }
-    }
-
     // Get metadata from curl handle
     if (init.curl) {
-      this.url = init.curl.getEffectiveUrl() || this.requestUrl;
+      this.url = init.url || init.curl.getEffectiveUrl() || this.requestUrl;
       this.statusCode = init.curl.getResponseCode();
       this.primaryIp = init.curl.getPrimaryIp();
       this.primaryPort = init.curl.getPrimaryPort();
@@ -90,13 +88,10 @@ export class Response {
       this.redirectCount = init.curl.getRedirectCount();
       this.redirectUrl = init.curl.getRedirectUrl();
       this.httpVersion = init.curl.getHttpVersion();
-      this.contentType = init.curl.getContentType();
-
-      // Detect encoding from content-type
-      this._encoding = this.detectEncoding();
+      this.contentType = init.curl.getContentType() || this.headers.get("content-type");
     } else {
-      this.url = this.requestUrl;
-      this.statusCode = 0;
+      this.url = init.url || this.requestUrl;
+      this.statusCode = init.statusCode || 0;
       this.primaryIp = null;
       this.primaryPort = 0;
       this.localIp = null;
@@ -105,7 +100,31 @@ export class Response {
       this.redirectUrl = null;
       this.httpVersion = CurlHttpVersion.CURL_HTTP_VERSION_1_1;
       this.contentType = this.headers.get("content-type");
-      this._encoding = this.detectEncoding();
+    }
+
+    // Store wire status text (falls back to lookup table in getter)
+    this._statusText = init.statusText || null;
+
+    // Detect encoding from content-type
+    this._encoding = this.detectEncoding();
+
+    // Extract cookies from headers using effective URL (after redirects)
+    this.cookies = new Cookies();
+
+    const cookieUrl = this.url;
+    const setCookies = this.headers.getAll("set-cookie");
+
+    for (const setCookie of setCookies) {
+      try {
+        const cookie = Cookies.parseSetCookie(
+          setCookie,
+          cookieUrl ? new URL(cookieUrl) : undefined,
+        );
+
+        this.cookies.set(cookie.name, cookie.value, cookie);
+      } catch {
+        // Ignore invalid cookies
+      }
     }
   }
 
@@ -136,6 +155,20 @@ export class Response {
   }
 
   /**
+   * HTTP status code (alias for statusCode)
+   */
+  get status(): number {
+    return this.statusCode;
+  }
+
+  /**
+   * HTTP status reason phrase (alias for reason)
+   */
+  get statusText(): string {
+    return this.reason;
+  }
+
+  /**
    * Check if response was successful (2xx status)
    */
   get ok(): boolean {
@@ -146,7 +179,7 @@ export class Response {
    * Get status reason phrase
    */
   get reason(): string {
-    return HTTP_STATUS_CODES[this.statusCode] || "Unknown";
+    return this._statusText || HTTP_STATUS_CODES[this.statusCode] || "Unknown";
   }
 
   /**

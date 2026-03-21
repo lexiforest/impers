@@ -155,4 +155,88 @@ describe("Cookies", () => {
       expect(cookie.secure).toBe(true);
     });
   });
+
+  describe("RFC 6265 domain dot handling", () => {
+    it("should strip leading dot from domain on set()", () => {
+      const cookies = new Cookies();
+      cookies.set("session", "abc", { domain: ".example.com" });
+      const cookie = cookies.getCookie("session");
+      expect(cookie?.domain).toBe("example.com");
+    });
+
+    it("should deduplicate dotted and dotless domains", () => {
+      const cookies = new Cookies();
+      cookies.set("session", "first", { domain: ".example.com" });
+      cookies.set("session", "second", { domain: "example.com" });
+      expect(cookies.size).toBe(1);
+      expect(cookies.get("session")).toBe("second");
+    });
+
+    it("should find cookie regardless of dot prefix in get()", () => {
+      const cookies = new Cookies();
+      cookies.set("session", "abc", { domain: "example.com" });
+      expect(cookies.get("session", ".example.com")).toBe("abc");
+
+      const cookies2 = new Cookies();
+      cookies2.set("session", "abc", { domain: ".example.com" });
+      expect(cookies2.get("session", "example.com")).toBe("abc");
+    });
+
+    it("should normalize domain in getCookie() lookup", () => {
+      const cookies = new Cookies();
+      cookies.set("session", "abc", { domain: ".example.com" });
+      const cookie = cookies.getCookie("session", ".example.com", "/");
+      expect(cookie).not.toBeNull();
+      expect(cookie?.domain).toBe("example.com");
+    });
+
+    it("should delete cookie using dotted domain", () => {
+      const cookies = new Cookies();
+      cookies.set("session", "abc", { domain: ".example.com" });
+      cookies.delete("session", ".example.com");
+      expect(cookies.has("session")).toBe(false);
+    });
+
+    it("should strip leading dot in parseSetCookie()", () => {
+      const cookie = Cookies.parseSetCookie("session=abc; Domain=.example.com");
+      expect(cookie.domain).toBe("example.com");
+    });
+
+    it("should match subdomains via getForUrl()", () => {
+      const cookies = new Cookies();
+      cookies.set("token", "xyz", { domain: ".sub.example.com" });
+
+      const exact = cookies.getForUrl("https://sub.example.com/");
+      expect(exact.map((c) => c.name)).toContain("token");
+
+      const deep = cookies.getForUrl("https://deep.sub.example.com/");
+      expect(deep.map((c) => c.name)).toContain("token");
+
+      const parent = cookies.getForUrl("https://example.com/");
+      expect(parent.map((c) => c.name)).not.toContain("token");
+    });
+
+    it("should match domains case-insensitively", () => {
+      const cookies = new Cookies();
+      cookies.set("token", "xyz", { domain: ".Example.COM" });
+
+      const matched = cookies.getForUrl("https://example.com/");
+      expect(matched.map((c) => c.name)).toContain("token");
+    });
+
+    it("should normalize dotted domains from Netscape format", () => {
+      const text = ".example.com\tTRUE\t/\tFALSE\t0\tsession\tabc";
+      const cookies = Cookies.fromNetscapeFormat(text);
+      const cookie = cookies.getCookie("session");
+      expect(cookie?.domain).toBe("example.com");
+    });
+
+    it("should export normalized domain in Netscape format", () => {
+      const cookies = new Cookies();
+      cookies.set("session", "abc", { domain: ".example.com" });
+      const output = cookies.toNetscapeFormat();
+      expect(output).toContain("example.com");
+      expect(output).not.toMatch(/\t\.example\.com\t/);
+    });
+  });
 });

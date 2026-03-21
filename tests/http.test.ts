@@ -2,6 +2,7 @@
  * Tests for HTTP requests using Session class
  */
 import { Session } from "../src/http/session.js";
+import { Headers } from "../src/http/headers.js";
 import { get, post, put, del, patch } from "../src/public.js";
 
 describe("Session", () => {
@@ -154,6 +155,53 @@ describe("Session", () => {
         })
       ).rejects.toThrow();
     });
+
+    it("should populate response.history for redirect chain", async () => {
+      const resp = await session.get(`${globalThis.TEST_SERVER_URL}/redirect/3`);
+      expect(resp.statusCode).toBe(200);
+      expect(resp.history.length).toBe(3);
+      for (const hop of resp.history) {
+        expect(hop.statusCode).toBe(302);
+      }
+    });
+
+    it("should track URLs through the redirect chain", async () => {
+      const resp = await session.get(`${globalThis.TEST_SERVER_URL}/redirect/2`);
+      expect(resp.history.length).toBe(2);
+      expect(resp.history[0].requestUrl).toContain("/redirect/2");
+      expect(resp.history[1].requestUrl).toContain("/redirect/1");
+    });
+
+    it("should have empty history when no redirects occur", async () => {
+      const resp = await session.get(`${globalThis.TEST_SERVER_URL}/get`);
+      expect(resp.history).toEqual([]);
+    });
+
+    it("should have empty history when redirects are disabled", async () => {
+      const resp = await session.get(`${globalThis.TEST_SERVER_URL}/redirect/2`, {
+        allowRedirects: false,
+      });
+      expect(resp.history).toEqual([]);
+    });
+
+    it("should extract cookies from intermediate redirect hops", async () => {
+      const resp = await session.get(`${globalThis.TEST_SERVER_URL}/redirect-with-cookie/2`);
+      expect(resp.statusCode).toBe(200);
+      // Cookies set at hop 2, hop 1, and hop 0 should all be in the session
+      expect(session.cookies.get("hop_2")).toBe("value_2");
+      expect(session.cookies.get("hop_1")).toBe("value_1");
+      expect(session.cookies.get("hop_0")).toBe("value_0");
+    });
+
+    it("should make accumulated redirect cookies available on subsequent requests", async () => {
+      await session.get(`${globalThis.TEST_SERVER_URL}/redirect-with-cookie/2`);
+      // Session now has cookies from all hops; a follow-up request should send them
+      const resp = await session.get(`${globalThis.TEST_SERVER_URL}/cookies`);
+      const json = resp.json() as { cookies: Record<string, string> };
+      expect(json.cookies["hop_2"]).toBe("value_2");
+      expect(json.cookies["hop_1"]).toBe("value_1");
+      expect(json.cookies["hop_0"]).toBe("value_0");
+    });
   });
 
   describe("Delays", () => {
@@ -164,6 +212,33 @@ describe("Session", () => {
       expect(resp.statusCode).toBe(200);
       expect(elapsed).toBeGreaterThanOrEqual(900); // Allow some tolerance
     });
+  });
+});
+
+describe("Headers.splitRawByResponse", () => {
+  it("should split multi-response raw headers into segments", () => {
+    const raw =
+      "HTTP/1.1 302 Found\r\nLocation: /get\r\nSet-Cookie: a=1\r\n\r\n" +
+      "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n";
+
+    const segments = Headers.splitRawByResponse(raw);
+    expect(segments.length).toBe(2);
+
+    expect(segments[0].statusCode).toBe(302);
+    expect(segments[0].statusText).toBe("Found");
+    expect(segments[0].headers.get("location")).toBe("/get");
+    expect(segments[0].headers.get("set-cookie")).toBe("a=1");
+
+    expect(segments[1].statusCode).toBe(200);
+    expect(segments[1].statusText).toBe("OK");
+    expect(segments[1].headers.get("content-type")).toBe("application/json");
+  });
+
+  it("should return a single segment for non-redirect responses", () => {
+    const raw = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n";
+    const segments = Headers.splitRawByResponse(raw);
+    expect(segments.length).toBe(1);
+    expect(segments[0].statusCode).toBe(200);
   });
 });
 

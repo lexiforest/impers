@@ -8,6 +8,12 @@ export type HeadersInit =
   | Iterable<[string, string]>
   | Array<string | [string, string]>;
 
+export interface HeaderSegment {
+  statusCode: number;
+  statusText: string;
+  headers: Headers;
+}
+
 /**
  * Headers - Case-insensitive HTTP headers container
  *
@@ -199,29 +205,86 @@ export class Headers implements Iterable<[string, string]> {
   }
 
   /**
+   * Split raw headers buffer into per-response segments.
+   * When curl follows redirects, the header callback receives headers
+   * for every response in the chain. Each HTTP/ status line starts a new segment.
+   */
+  static splitRawByResponse(raw: string | Buffer): Array<HeaderSegment> {
+    const text = Buffer.isBuffer(raw) ? raw.toString("utf-8") : raw;
+    const lines = text.split(/\r?\n/);
+    const segments: HeaderSegment[] = [];
+
+    let currentStatusCode = 0;
+    let currentStatusText = "";
+    let currentHeaderLines: string[] = [];
+
+    for (const line of lines) {
+      const statusMatch = line.match(/^HTTP\/[\d.]+\s+(\d{3})\s*(.*)/);
+      if (statusMatch) {
+        // Push previous segment if we have one
+        if (currentStatusCode > 0) {
+          segments.push({
+            statusCode: currentStatusCode,
+            statusText: currentStatusText,
+            headers: Headers.fromHeaderLines(currentHeaderLines),
+          });
+        }
+
+        currentStatusCode = parseInt(statusMatch[1], 10);
+        currentStatusText = statusMatch[2]?.trim() || "";
+        currentHeaderLines = [];
+
+        continue;
+      }
+
+      if (!line.trim()) continue;
+
+      // Handle continuation lines (starting with space/tab)
+      if ((line.startsWith(" ") || line.startsWith("\t")) && currentHeaderLines.length > 0) {
+        currentHeaderLines[currentHeaderLines.length - 1] += line;
+      } else {
+        currentHeaderLines.push(line);
+      }
+    }
+
+    // Push the last segment
+    if (currentStatusCode > 0) {
+      segments.push({
+        statusCode: currentStatusCode,
+        statusText: currentStatusText,
+        headers: Headers.fromHeaderLines(currentHeaderLines),
+      });
+    }
+
+    return segments;
+  }
+
+  /**
+   * Create Headers from an array of "Name: Value" lines
+   */
+  private static fromHeaderLines(lines: string[]): Headers {
+    const headers = new Headers();
+
+    for (const line of lines) {
+      const colonIdx = line.indexOf(":");
+      if (colonIdx <= 0) continue;
+
+      const name = line.slice(0, colonIdx).trim();
+      const value = line.slice(colonIdx + 1).trim();
+      headers.append(name, value);
+    }
+
+    return headers;
+  }
+
+  /**
    * Create Headers from curl response headers
    * Parses raw header lines (including status line)
    */
   static fromRaw(raw: string | Buffer): Headers {
-    const headers = new Headers();
     const text = Buffer.isBuffer(raw) ? raw.toString("utf-8") : raw;
-    const lines = text.split(/\r?\n/);
-
-    for (const line of lines) {
-      // Skip empty lines and status line
-      if (!line || line.startsWith("HTTP/")) {
-        continue;
-      }
-
-      const colonIdx = line.indexOf(":");
-      if (colonIdx > 0) {
-        const name = line.slice(0, colonIdx).trim();
-        const value = line.slice(colonIdx + 1).trim();
-        headers.append(name, value);
-      }
-    }
-
-    return headers;
+    const lines = text.split(/\r?\n/).filter((line) => line && !line.startsWith("HTTP/"));
+    return Headers.fromHeaderLines(lines);
   }
 
   /**
