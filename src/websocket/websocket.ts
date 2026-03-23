@@ -6,14 +6,13 @@
  */
 
 import { Curl } from "../core/easy.js";
-import { CurlMulti, getSharedMulti } from "../core/multi.js";
 import {
+  curl_easy_perform_async,
   curl_ws_recv,
   curl_ws_send,
   type CurlHandle,
 } from "../ffi/libcurl.js";
 import { CurlOpt, CurlCode, CurlWsFlag } from "../ffi/constants.js";
-// CurlCode is used for checking recv/send results
 import { WebSocketError, WebSocketClosed } from "../utils/errors.js";
 import { Headers } from "../http/headers.js";
 import type { WebSocketOptions } from "../types/options.js";
@@ -55,8 +54,6 @@ export type { WebSocketOptions } from "../types/options.js";
 export class AsyncWebSocket {
   private curl: Curl;
   private handle: CurlHandle;
-  private multi: CurlMulti;
-  private ownMulti: boolean;
 
   private _url: string;
   private _connected: boolean = false;
@@ -83,11 +80,6 @@ export class AsyncWebSocket {
     // Create curl handle
     this.curl = new Curl();
     this.handle = this.curl.getHandle()!;
-
-    // WebSocket doesn't use multi handle for the actual WebSocket operations
-    // but we keep it for compatibility with the interface
-    this.multi = getSharedMulti();
-    this.ownMulti = false;
 
     // Configure WebSocket URL (curl expects ws:// or wss:// scheme)
     this.curl.setOpt(CurlOpt.URL, url);
@@ -118,23 +110,22 @@ export class AsyncWebSocket {
   }
 
   /**
-   * Perform the WebSocket connection handshake
+   * Perform the WebSocket connection handshake using Koffi's async
+   * worker thread to avoid blocking the Node.js event loop.
    */
   private async performConnect(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      try {
-        // Perform synchronous connection (required for WebSocket mode)
-        // perform() throws on error
-        this.curl.perform();
-
-        this._connected = true;
-        resolve();
-      } catch (error) {
-        this._closed = true;
-        this.curl.cleanup();
-        reject(new WebSocketError(`Failed to connect: ${error}`));
+    try {
+      const code = await curl_easy_perform_async(this.handle);
+      if (code !== CurlCode.CURLE_OK) {
+        throw new WebSocketError(`WS connect failed with code ${code}`);
       }
-    });
+      this._connected = true;
+    } catch (error) {
+      this._closed = true;
+      this.curl.cleanup();
+      if (error instanceof WebSocketError) throw error;
+      throw new WebSocketError(`Failed to connect: ${error}`);
+    }
   }
 
   /**
@@ -271,23 +262,23 @@ export class AsyncWebSocket {
 
     // Poll for message
     return new Promise<WebSocketMessage>((resolve, reject) => {
+      let settled = false;
+
       const poll = () => {
+        if (settled) return;
+
         // Check timeout
         if (Date.now() - startTime >= timeoutMs) {
-          if (this.pollTimer) {
-            clearTimeout(this.pollTimer);
-            this.pollTimer = null;
-          }
+          settled = true;
+          this.pollTimer = null;
           reject(new WebSocketError("Receive timeout"));
           return;
         }
 
         // Check if closed
         if (this._closed) {
-          if (this.pollTimer) {
-            clearTimeout(this.pollTimer);
-            this.pollTimer = null;
-          }
+          settled = true;
+          this.pollTimer = null;
           reject(
             new WebSocketClosed(
               this._closeEvent?.code || 1006,
@@ -300,21 +291,19 @@ export class AsyncWebSocket {
         try {
           const message = this.tryReceive();
           if (message) {
-            if (this.pollTimer) {
-              clearTimeout(this.pollTimer);
-              this.pollTimer = null;
-            }
+            settled = true;
+            this.pollTimer = null;
             resolve(message);
             return;
           }
 
-          // No message, schedule next poll
-          this.pollTimer = setTimeout(poll, this.pollInterval);
-        } catch (error) {
-          if (this.pollTimer) {
-            clearTimeout(this.pollTimer);
-            this.pollTimer = null;
+          // No message, schedule next poll (only if not closed/settled)
+          if (!this._closed && !settled) {
+            this.pollTimer = setTimeout(poll, this.pollInterval);
           }
+        } catch (error) {
+          settled = true;
+          this.pollTimer = null;
           reject(error);
         }
       };
@@ -442,9 +431,6 @@ export class AsyncWebSocket {
 
     // Cleanup
     this.curl.cleanup();
-    if (this.ownMulti) {
-      await this.multi.close();
-    }
   }
 
   /**

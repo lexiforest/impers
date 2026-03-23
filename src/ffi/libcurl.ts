@@ -43,6 +43,21 @@ const curl_ws_frame = koffi.struct("curl_ws_frame", {
 const curl_easy_init = lib.func("void * curl_easy_init()");
 const curl_easy_cleanup = lib.func("void curl_easy_cleanup(void *)");
 const curl_easy_perform = lib.func("int curl_easy_perform(void *)");
+
+/**
+ * Async version of curl_easy_perform that runs in a worker thread
+ * via Koffi's .async() support. This avoids blocking the event loop,
+ * which is critical when the mock server runs in the same process.
+ */
+function curl_easy_perform_async(handle: CurlHandle): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    (curl_easy_perform as unknown as { async: (handle: CurlHandle, cb: (err: Error | null, code: number) => void) => void })
+      .async(handle, (err: Error | null, code: number) => {
+        if (err) reject(err);
+        else resolve(code);
+      });
+  });
+}
 const curl_easy_duphandle = lib.func("void * curl_easy_duphandle(void *)");
 const curl_easy_reset = lib.func("void curl_easy_reset(void *)");
 const curl_easy_strerror = lib.func("const char * curl_easy_strerror(int)");
@@ -491,6 +506,7 @@ export {
   curl_easy_init,
   curl_easy_cleanup,
   curl_easy_perform,
+  curl_easy_perform_async,
   curl_easy_duphandle,
   curl_easy_reset,
   curl_easy_strerror,

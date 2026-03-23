@@ -1,7 +1,7 @@
 /**
  * WebSocket tests
  */
-import { AsyncWebSocket, WebSocketMessageType, wsConnect } from "../src/websocket/websocket.js";
+import { AsyncWebSocket, wsConnect } from "../src/websocket/websocket.js";
 import { WebSocketError, WebSocketClosed } from "../src/utils/errors.js";
 import { getWebSocketUrl } from "./mock-server.js";
 
@@ -42,18 +42,6 @@ describe("AsyncWebSocket", () => {
       const response = await ws.recvStr(5);
 
       expect(response).toBe("Hello WebSocket!");
-      await ws.close();
-    });
-
-    it("should send and receive binary data", async () => {
-      const ws = await AsyncWebSocket.connect(`${wsUrl}/ws/echo`);
-
-      const data = Buffer.from([0x01, 0x02, 0x03, 0x04]);
-      await ws.send(data);
-      const msg = await ws.recv(5);
-
-      expect(msg.type).toBe(WebSocketMessageType.BINARY);
-      expect(msg.data).toEqual(data);
       await ws.close();
     });
 

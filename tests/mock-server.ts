@@ -220,9 +220,9 @@ export async function startMockServer(port = 0): Promise<number> {
 
   // WebSocket echo endpoint
   server.get("/ws/echo", { websocket: true }, (socket) => {
-    socket.on("message", (message: Buffer) => {
-      // Echo back the message
-      socket.send(message);
+    socket.on("message", (message: Buffer, isBinary: boolean) => {
+      // Echo back the message preserving binary/text frame type
+      socket.send(message, { binary: isBinary });
     });
   });
 
