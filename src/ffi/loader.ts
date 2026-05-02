@@ -444,6 +444,11 @@ function pickAsset(assets: ReleaseAsset[], platform: string, arch: string): Rele
     : platform === "linux"
     ? ["linux"]
     : ["win", "windows"];
+  const platformExcludes = platform === "linux"
+    ? ["android"]
+    : platform === "darwin"
+    ? ["ios"]
+    : [];
   const archTokens = arch === "arm64"
     ? ["arm64", "aarch64"]
     : arch === "x64"
@@ -451,15 +456,54 @@ function pickAsset(assets: ReleaseAsset[], platform: string, arch: string): Rele
     : [arch];
 
   const matched = filtered.filter((asset) =>
-    hasAnyToken(asset.name!, platformTokens) && hasAnyToken(asset.name!, archTokens)
+    hasAnyToken(asset.name!, platformTokens) &&
+    hasAnyToken(asset.name!, archTokens) &&
+    !hasAnyToken(asset.name!, platformExcludes)
   );
-  const fallback = matched.length > 0
+  const platformMatched = matched.length > 0
     ? matched
-    : filtered.filter((asset) => hasAnyToken(asset.name!, platformTokens));
-  const pool = fallback.length > 0 ? fallback : filtered;
+    : filtered.filter((asset) =>
+      hasAnyToken(asset.name!, platformTokens) &&
+      !hasAnyToken(asset.name!, platformExcludes)
+    );
+
+  const abiMatched = platform === "linux"
+    ? preferLinuxAbi(platformMatched)
+    : platformMatched;
+  const pool = abiMatched.length > 0 ? abiMatched : filtered;
 
   pool.sort((a, b) => rankByExt(a.name!, platform) - rankByExt(b.name!, platform));
   return pool[0] || null;
+}
+
+function preferLinuxAbi(assets: ReleaseAsset[]): ReleaseAsset[] {
+  const libc = getLinuxLibc();
+  const preferredAbi = libc === "musl" ? "linux-musl" : "linux-gnu";
+  const preferred = assets.filter((asset) => asset.name!.toLowerCase().includes(preferredAbi));
+  if (preferred.length > 0) {
+    return preferred;
+  }
+
+  const gnuOrMusl = assets.filter((asset) => {
+    const name = asset.name!.toLowerCase();
+    return name.includes("linux-gnu") || name.includes("linux-musl");
+  });
+  return gnuOrMusl.length > 0 ? gnuOrMusl : assets;
+}
+
+function getLinuxLibc(): "gnu" | "musl" | null {
+  if (process.platform !== "linux") {
+    return null;
+  }
+
+  const report = process.report?.getReport() as {
+    header?: { glibcVersionRuntime?: string };
+  } | undefined;
+  if (report?.header?.glibcVersionRuntime) {
+    return "gnu";
+  }
+
+  return "musl";
 }
 
 function rankByExt(name: string, platform: string): number {

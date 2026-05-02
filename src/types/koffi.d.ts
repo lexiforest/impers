@@ -34,6 +34,29 @@ declare module "koffi" {
 
     // Introspection
     introspect(type: KoffiType): unknown;
+
+    node: {
+      poll(
+        fd: number,
+        opts: { readable?: boolean; writable?: boolean; disconnect?: boolean },
+        callback: (
+          status: number,
+          events: { readable: boolean; writable: boolean; disconnect: boolean }
+        ) => void
+      ): {
+        start(
+          opts: { readable?: boolean; writable?: boolean; disconnect?: boolean },
+          callback: (
+            status: number,
+            events: { readable: boolean; writable: boolean; disconnect: boolean }
+          ) => void
+        ): void;
+        stop(): void;
+        close(): void;
+        unref(): void;
+        ref(): void;
+      };
+    };
   };
 
   export default koffi;
