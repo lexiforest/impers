@@ -100,7 +100,13 @@ export async function startMockServer(port = 0): Promise<number> {
   // Delay endpoint - delays response
   server.get<{ Params: { seconds: string } }>("/delay/:seconds", async (request, reply) => {
     const seconds = parseFloat(request.params.seconds);
+    if (process.env.IMPERS_DEBUG_TESTS === "1") {
+      console.log(`[mock-server] delay start seconds=${seconds}`);
+    }
     await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+    if (process.env.IMPERS_DEBUG_TESTS === "1") {
+      console.log(`[mock-server] delay end seconds=${seconds}`);
+    }
     return {
       args: request.query,
       headers: request.headers,
