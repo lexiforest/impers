@@ -50,6 +50,9 @@ type PollEvents = {
 };
 
 type PollHandle = ReturnType<typeof koffi.node.poll>;
+const SOCKET_ACTION_FALLBACK_MS = 100;
+const CURLPIPE_NOTHING = 0;
+const CURLPIPE_MULTIPLEX = 2;
 const koffiTypeSuffix = `${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
 const SocketCallbackProto = koffi.proto(
@@ -77,6 +80,7 @@ export class CurlMulti {
   private curlToAddr: Map<Curl, string> = new Map();
   private polling: boolean = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private fallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private socketPolls: Map<number, PollHandle> = new Map();
   private socketCallback: unknown | null = null;
   private timerCallback: unknown | null = null;
@@ -99,10 +103,13 @@ export class CurlMulti {
       this.setOptLong(CurlMOpt.CURLMOPT_MAX_TOTAL_CONNECTIONS, options.maxTotalConnections);
     }
     if (options.pipelining !== undefined) {
-      // 2 = CURLPIPE_MULTIPLEX for HTTP/2 multiplexing
-      this.setOptLong(CurlMOpt.CURLMOPT_PIPELINING, options.pipelining ? 2 : 0);
+      this.setOptLong(
+        CurlMOpt.CURLMOPT_PIPELINING,
+        options.pipelining ? CURLPIPE_MULTIPLEX : CURLPIPE_NOTHING
+      );
     }
 
+    this.ensureSocketCallbacks();
   }
 
   private setOptLong(option: number, value: number): void {
@@ -127,11 +134,34 @@ export class CurlMulti {
     }
 
     this.socketCallback = koffi.register(
-      (_easy: unknown, socket: number, what: number) => this.updateSocketPoll(socket, what),
+      (
+        _easy: unknown,
+        socket: number,
+        what: number,
+        clientp: unknown,
+        socketp: unknown
+      ) => {
+        void clientp;
+        void socketp;
+        try {
+          return this.updateSocketPoll(socket, what);
+        } catch (error) {
+          this.failFromCallback("socket callback", error);
+          return -1;
+        }
+      },
       koffi.pointer(SocketCallbackProto)
     );
     this.timerCallback = koffi.register(
-      (_multi: unknown, timeoutMs: number) => this.updateTimer(timeoutMs),
+      (_multi: unknown, timeoutMs: number, clientp: unknown) => {
+        void clientp;
+        try {
+          return this.updateTimer(timeoutMs);
+        } catch (error) {
+          this.failFromCallback("timer callback", error);
+          return -1;
+        }
+      },
       koffi.pointer(TimerCallbackProto)
     );
 
@@ -161,8 +191,6 @@ export class CurlMulti {
       const handleAddr = getHandleAddress(easyHandle);
       debugMulti(`add handle=${handleAddr} pending=${this.pendingTransfers.size}`);
 
-      this.ensureSocketCallbacks();
-
       // Add to multi handle
       const code = curl_multi_add_handle(this.handle!, easyHandle);
       if (code !== CurlMCode.CURLM_OK) {
@@ -187,7 +215,8 @@ export class CurlMulti {
     if (this.closed) return;
     this.polling = true;
     debugMulti(`start pending=${this.pendingTransfers.size}`);
-    this.runSocketAction(CURL_SOCKET_TIMEOUT, 0);
+    this.scheduleFallbackTimer();
+    this.processData(CURL_SOCKET_TIMEOUT, CurlPoll.CURL_POLL_NONE);
   }
 
   /**
@@ -219,6 +248,14 @@ export class CurlMulti {
     }
   }
 
+  private processData(socket: number, events: number): void {
+    try {
+      this.runSocketAction(socket, events);
+    } catch (error) {
+      this.failFromCallback("socket action", error);
+    }
+  }
+
   private updateSocketPoll(socket: number, what: number): number {
     debugMulti(`socket callback socket=${socket} what=${what}`);
     if (this.closed) {
@@ -226,16 +263,20 @@ export class CurlMulti {
       return 0;
     }
 
-    if (what === CurlPoll.CURL_POLL_REMOVE || what === CurlPoll.CURL_POLL_NONE) {
-      this.closeSocketPoll(socket);
-      return 0;
-    }
-
     try {
+      const existing = this.socketPolls.get(socket);
+      if (existing) {
+        existing.stop();
+      }
+
+      if (what === CurlPoll.CURL_POLL_REMOVE || what === CurlPoll.CURL_POLL_NONE) {
+        this.closeSocketPoll(socket);
+        return 0;
+      }
+
       const readable = what === CurlPoll.CURL_POLL_IN || what === CurlPoll.CURL_POLL_INOUT;
       const writable = what === CurlPoll.CURL_POLL_OUT || what === CurlPoll.CURL_POLL_INOUT;
       const opts = { readable, writable, disconnect: true };
-      const existing = this.socketPolls.get(socket);
       if (existing) {
         existing.start(opts, (status, events) => this.onSocketEvent(socket, status, events));
       } else {
@@ -272,7 +313,7 @@ export class CurlMulti {
     }
 
     if (eventMask !== 0) {
-      this.runSocketAction(socket, eventMask);
+      this.processData(socket, eventMask);
     }
   }
 
@@ -288,8 +329,8 @@ export class CurlMulti {
     this.timer = setTimeout(() => {
       this.timer = null;
       debugMulti("timer fired");
-      this.runSocketAction(CURL_SOCKET_TIMEOUT, 0);
-    }, timeoutMs);
+      this.processData(CURL_SOCKET_TIMEOUT, CurlPoll.CURL_POLL_NONE);
+    }, Math.max(0, timeoutMs));
     return 0;
   }
 
@@ -297,6 +338,30 @@ export class CurlMulti {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+  }
+
+  private scheduleFallbackTimer(): void {
+    if (this.fallbackTimer || this.closed || this.pendingTransfers.size === 0) {
+      return;
+    }
+
+    this.fallbackTimer = setTimeout(() => {
+      this.fallbackTimer = null;
+      if (this.closed || this.pendingTransfers.size === 0) {
+        return;
+      }
+
+      debugMulti("fallback fired");
+      this.processData(CURL_SOCKET_TIMEOUT, CurlPoll.CURL_POLL_NONE);
+      this.scheduleFallbackTimer();
+    }, SOCKET_ACTION_FALLBACK_MS);
+  }
+
+  private clearFallbackTimer(): void {
+    if (this.fallbackTimer) {
+      clearTimeout(this.fallbackTimer);
+      this.fallbackTimer = null;
     }
   }
 
@@ -323,13 +388,8 @@ export class CurlMulti {
   private stopPolling(): void {
     this.polling = false;
     this.clearTimer();
+    this.clearFallbackTimer();
     this.closeAllSocketPolls();
-
-    if (this.handle && this.pendingTransfers.size === 0) {
-      this.setOptPtr(CurlMOpt.CURLMOPT_SOCKETFUNCTION, null);
-      this.setOptPtr(CurlMOpt.CURLMOPT_TIMERFUNCTION, null);
-      this.releaseCallbacks();
-    }
   }
 
   /**
@@ -386,6 +446,17 @@ export class CurlMulti {
     }
     this.pendingTransfers.clear();
     this.curlToAddr.clear();
+  }
+
+  private failFromCallback(context: string, error: unknown): void {
+    const reason = error instanceof Error ? error : new Error(String(error));
+    const wrapped = new Error(`${context} failed: ${reason.message}`);
+    if (reason.stack) {
+      wrapped.stack = reason.stack;
+    }
+    debugMulti(wrapped.message);
+    this.failAllPending(wrapped);
+    this.stopPolling();
   }
 
   /**

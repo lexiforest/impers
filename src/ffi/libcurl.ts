@@ -342,7 +342,7 @@ function curl_multi_setopt_long(
   option: number,
   value: number
 ): number {
-  return curl_multi_setopt_variadic(multi, option, "int", value) as number;
+  return curl_multi_setopt_variadic(multi, option, "long", value) as number;
 }
 
 function curl_multi_setopt_ptr(
@@ -579,7 +579,6 @@ function getHandleAddress(handle: unknown): string {
     return addr.toString(16);
   } catch {
     // Fallback: try to extract from string representation
-    const str = Object.prototype.toString.call(handle);
     const match = String(handle).match(/External:\s*([0-9a-f]+)/i);
     return match ? match[1] : String(handle);
   }
