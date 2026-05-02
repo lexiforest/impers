@@ -50,12 +50,13 @@ type PollEvents = {
 };
 
 type PollHandle = ReturnType<typeof koffi.node.poll>;
+const koffiTypeSuffix = `${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
 const SocketCallbackProto = koffi.proto(
-  "int CurlMultiSocketCallback(void *, int, int, void *, void *)"
+  `int CurlMultiSocketCallback_${koffiTypeSuffix}(void *, int, int, void *, void *)`
 );
 const TimerCallbackProto = koffi.proto(
-  "int CurlMultiTimerCallback(void *, long, void *)"
+  `int CurlMultiTimerCallback_${koffiTypeSuffix}(void *, long, void *)`
 );
 
 /**

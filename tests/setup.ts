@@ -10,9 +10,15 @@ declare global {
 }
 
 beforeAll(async () => {
-  const port = await startMockServer();
+  await startMockServer();
   globalThis.TEST_SERVER_URL = getServerUrl();
   console.log(`Mock server started at ${globalThis.TEST_SERVER_URL}`);
+});
+
+beforeEach(() => {
+  if (process.env.IMPERS_DEBUG_TESTS === "1") {
+    console.log(`[jest] starting: ${expect.getState().currentTestName}`);
+  }
 });
 
 afterAll(async () => {

@@ -2,8 +2,9 @@ import { koffi } from "../ffi/libcurl.js";
 
 export type WriteCallback = (chunk: Buffer) => number | void;
 
+const koffiTypeSuffix = `${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 const WriteCallbackProto = koffi.proto(
-  "size_t WriteCallback(void *, size_t, size_t, void *)"
+  `size_t WriteCallback_${koffiTypeSuffix}(void *, size_t, size_t, void *)`
 );
 
 export function wrapWriteCallback(fn: WriteCallback): unknown {

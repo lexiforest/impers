@@ -2,6 +2,7 @@ import koffi from "koffi";
 import { resolveLibcurlPath } from "../utils/platform.js";
 
 const lib = koffi.load(await resolveLibcurlPath());
+const koffiTypeSuffix = `${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
 // Type aliases for clarity
 type CurlHandle = unknown;
@@ -20,7 +21,7 @@ const curl_mimepart_ptr = koffi.pointer("void");
 // Struct for curl_multi_info_read result
 // Note: On 64-bit systems, there is padding after msg to align easy_handle
 // The data union contains both void* and CURLcode - we use void* for correct alignment
-const CURLMsg = koffi.struct("CURLMsg", {
+const CURLMsg = koffi.struct(`CURLMsg_${koffiTypeSuffix}`, {
   msg: "int",
   _pad: "int",           // 4 bytes padding for 64-bit alignment
   easy_handle: "void *", // 8 bytes
@@ -28,7 +29,7 @@ const CURLMsg = koffi.struct("CURLMsg", {
 });
 
 // WebSocket frame metadata struct
-const curl_ws_frame = koffi.struct("curl_ws_frame", {
+const curl_ws_frame = koffi.struct(`curl_ws_frame_${koffiTypeSuffix}`, {
   age: "int",
   flags: "int",
   offset: "int64",
@@ -182,7 +183,7 @@ const curl_version = lib.func("const char * curl_version()");
 
 // curl_version_info returns a pointer to a static struct
 // We define a simplified version info struct for reading
-const curl_version_info_data = koffi.struct("curl_version_info_data", {
+const curl_version_info_data = koffi.struct(`curl_version_info_data_${koffiTypeSuffix}`, {
   age: "int",
   version: "const char *",
   version_num: "uint32",
