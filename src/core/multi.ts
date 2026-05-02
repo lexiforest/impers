@@ -109,7 +109,6 @@ export class CurlMulti {
       );
     }
 
-    this.ensureSocketCallbacks();
   }
 
   private setOptLong(option: number, value: number): void {
@@ -190,6 +189,8 @@ export class CurlMulti {
       // Get the handle address for lookup
       const handleAddr = getHandleAddress(easyHandle);
       debugMulti(`add handle=${handleAddr} pending=${this.pendingTransfers.size}`);
+
+      this.ensureSocketCallbacks();
 
       // Add to multi handle
       const code = curl_multi_add_handle(this.handle!, easyHandle);
