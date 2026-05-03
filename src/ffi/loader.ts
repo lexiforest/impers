@@ -92,13 +92,13 @@ function findExistingPath(paths: string[]): string | null {
 }
 
 function isNonEmptyFile(path: string): boolean {
-  try {
-    const stat = statSync(path);
-    return stat.isFile() && stat.size > 0;
-  } catch {
-    return false;
-  }
-}
+    try {
+        const stat = statSync(path);  
+        return (stat.isFile() || stat.isSymbolicLink()) && stat.size > 0;
+    } catch {
+        return false;
+    }
+};
 
 function getCacheRoot(): string | null {
   if (process.env.IMPER_CACHE_DIR) {
