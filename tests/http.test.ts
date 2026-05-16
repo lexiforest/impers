@@ -44,6 +44,15 @@ describe("Session", () => {
   });
 
   describe("POST requests", () => {
+    it("should send POST request without a body", async () => {
+      const resp = await session.post(`${globalThis.TEST_SERVER_URL}/post`);
+      expect(resp.statusCode).toBe(200);
+
+      const json = resp.json() as { data: string; json: null };
+      expect(json.data).toBe("");
+      expect(json.json).toBeNull();
+    });
+
     it("should send JSON body", async () => {
       const resp = await session.post(`${globalThis.TEST_SERVER_URL}/post`, {
         json: { message: "hello", count: 42 },

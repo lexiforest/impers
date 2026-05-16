@@ -553,9 +553,12 @@ export class Session {
         : Buffer.from(options.content, "utf-8");
     }
 
-    if (body) {
+    if (body !== null) {
       curl.setOpt(CurlOpt.POSTFIELDS, body);
       curl.setOpt(CurlOpt.POSTFIELDSIZE, body.length);
+    } else if (method.toUpperCase() === "POST") {
+      curl.setOpt(CurlOpt.POSTFIELDS, "");
+      curl.setOpt(CurlOpt.POSTFIELDSIZE, 0);
     }
 
     // TODO: Handle multipart/files with CurlMime
