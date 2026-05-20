@@ -22,7 +22,11 @@ declare module "koffi" {
 
     // Memory operations
     decode(value: unknown, type: string | KoffiType): unknown;
-    encode(value: unknown, type: string | KoffiType): Buffer;
+    encode(ref: unknown, type: string | KoffiType, value: unknown): void;
+    encode(ref: unknown, type: string | KoffiType, value: unknown, len: number): void;
+    encode(ref: unknown, offset: number, type: string | KoffiType, value: unknown): void;
+    encode(ref: unknown, offset: number, type: string | KoffiType, value: unknown, len: number): void;
+    view(ref: unknown, len: number): ArrayBuffer;
 
     // Utility
     sizeof(type: string | KoffiType): number;

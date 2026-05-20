@@ -93,6 +93,10 @@ export interface RequestOptions {
   content?: string | Buffer;
   /** Files for multipart upload */
   files?: Record<string, string | Buffer | { filename: string; content: Buffer; contentType?: string }>;
+  /** Request body callback for streamed uploads */
+  readCallback?: (size: number) => Buffer | string | null | undefined;
+  /** Total byte size for readCallback request bodies */
+  readCallbackSize?: number | bigint;
 
   // Headers and cookies
   /** Request headers */
@@ -153,6 +157,8 @@ export interface RequestOptions {
   stream?: boolean;
   /** Content callback for streaming */
   contentCallback?: (chunk: Buffer) => void;
+  /** Header callback for raw response header chunks */
+  headerCallback?: (chunk: Buffer) => void;
 
   // HTTP version
   /** Force specific HTTP version ("1.0", "1.1", "2", "3") */

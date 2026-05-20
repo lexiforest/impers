@@ -122,6 +122,20 @@ describe("Session", () => {
       expect(json.files.avatar.contentType).toBe("text/plain");
       expect(json.files.avatar.data).toBe("avatar data");
     });
+
+    it("should send request body from read callback", async () => {
+      const chunks = [Buffer.from("hello "), Buffer.from("from read callback")];
+      const size = chunks.reduce((total, chunk) => total + chunk.length, 0);
+
+      const resp = await session.post(`${globalThis.TEST_SERVER_URL}/post`, {
+        headers: { "Content-Type": "text/plain" },
+        readCallbackSize: size,
+        readCallback: () => chunks.shift(),
+      });
+
+      const json = resp.json() as { data: string };
+      expect(json.data).toBe("hello from read callback");
+    });
   });
 
   describe("PUT requests", () => {
@@ -168,6 +182,21 @@ describe("Session", () => {
     it("should get response headers", async () => {
       const resp = await session.get(`${globalThis.TEST_SERVER_URL}/get`);
       expect(resp.headers.get("content-type")).toContain("application/json");
+    });
+
+    it("should call header callback with raw response headers", async () => {
+      const headerChunks: Buffer[] = [];
+
+      const resp = await session.get(`${globalThis.TEST_SERVER_URL}/get`, {
+        headerCallback: (chunk) => {
+          headerChunks.push(Buffer.from(chunk));
+        },
+      });
+
+      const rawHeaders = Buffer.concat(headerChunks).toString("latin1");
+      expect(resp.headers.get("content-type")).toContain("application/json");
+      expect(rawHeaders).toContain("HTTP/1.1 200 OK");
+      expect(rawHeaders.toLowerCase()).toContain("content-type: application/json");
     });
   });
 

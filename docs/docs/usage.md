@@ -92,3 +92,37 @@ await impers.post("https://httpbin.org/post", {
   },
 });
 ```
+
+Use `readCallback` when the request body should be supplied incrementally. The
+callback receives the maximum number of bytes libcurl can accept and should
+return a `Buffer` or string. Return `null`, `undefined`, or an empty value to
+signal end of input. Set `readCallbackSize` when the total byte size is known.
+
+```typescript
+const chunks = [Buffer.from("hello "), Buffer.from("world")];
+
+await impers.post("https://httpbin.org/post", {
+  headers: { "Content-Type": "text/plain" },
+  readCallbackSize: chunks.reduce((total, chunk) => total + chunk.length, 0),
+  readCallback: () => chunks.shift(),
+});
+```
+
+## Streaming Callbacks
+
+Use `contentCallback` to handle response body chunks as libcurl receives them.
+Use `headerCallback` when you need raw response header chunks, for example when
+proxying a response.
+
+```typescript
+await impers.get("https://example.com/data", {
+  impersonate: "firefox",
+  stream: true,
+  headerCallback: (chunk) => {
+    console.log(chunk.toString("latin1"));
+  },
+  contentCallback: (chunk) => {
+    console.log(chunk);
+  },
+});
+```

@@ -188,6 +188,9 @@ export class Session {
       });
 
       curl.setHeaderFunction((chunk) => {
+        if (mergedOptions.headerCallback) {
+          mergedOptions.headerCallback(chunk);
+        }
         headerChunks.push(Buffer.from(chunk));
       });
 
@@ -538,6 +541,25 @@ export class Session {
    * Set request body
    */
   private setBody(curl: Curl, method: string, options: RequestOptions): CurlMime | null {
+    if (options.readCallback) {
+      if (
+        options.json !== undefined ||
+        options.data !== undefined ||
+        options.content !== undefined ||
+        this.hasMultipartBody(options)
+      ) {
+        throw new Error("readCallback cannot be combined with other request body options");
+      }
+
+      curl.setReadFunction(options.readCallback);
+      curl.setOpt(CurlOpt.UPLOAD, 1);
+      curl.setOpt(CurlOpt.CUSTOMREQUEST, method.toUpperCase());
+      if (options.readCallbackSize !== undefined) {
+        curl.setOpt(CurlOpt.INFILESIZE_LARGE, BigInt(options.readCallbackSize));
+      }
+      return null;
+    }
+
     if (this.hasMultipartBody(options)) {
       const mime = new CurlMime(curl);
       this.addDataFieldsToMime(mime, options.data);

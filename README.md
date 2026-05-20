@@ -277,6 +277,8 @@ await session.close();
 | `multipart` | `MultipartField[]` | Multipart form fields and file parts |
 | `files` | `object` | Files for multipart upload |
 | `content` | `string \| Buffer` | Raw body content |
+| `readCallback` | `(size: number) => Buffer \| string \| null \| undefined` | Callback for streamed request body chunks |
+| `readCallbackSize` | `number \| bigint` | Total byte size for `readCallback` request bodies |
 | `auth` | `object` | HTTP authentication (basic, digest, bearer) |
 | `proxy` | `string` | Proxy URL |
 | `timeout` | `number` | Request timeout in seconds |
@@ -288,6 +290,9 @@ await session.close();
 | `ja3` | `string` | JA3 TLS fingerprint string |
 | `akamai` | `string` | Akamai HTTP/2 fingerprint string |
 | `extraFp` | `ExtraFingerprint` | Fine-grained fingerprint options |
+| `stream` | `boolean` | Do not buffer response content |
+| `contentCallback` | `(chunk: Buffer) => void` | Callback for response body chunks |
+| `headerCallback` | `(chunk: Buffer) => void` | Callback for raw response header chunks |
 | `httpVersion` | `string` | Force HTTP version ("1.0", "1.1", "2", "3") |
 
 ### Response Object

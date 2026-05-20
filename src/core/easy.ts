@@ -22,7 +22,12 @@ import {
 } from "../ffi/libcurl.js";
 import { CurlOpt, CurlInfo, CurlCode, CurlVersion } from "../ffi/constants.js";
 import { raiseIfError } from "../utils/errors.js";
-import { wrapWriteCallback, type WriteCallback } from "../utils/callbacks.js";
+import {
+  wrapReadCallback,
+  wrapWriteCallback,
+  type ReadCallback,
+  type WriteCallback,
+} from "../utils/callbacks.js";
 import { SList } from "./slist.js";
 import type { ExtraFingerprint } from "../types/options.js";
 
@@ -263,6 +268,15 @@ export class Curl {
     const cb = wrapWriteCallback(fn);
     this._callbacks.push(cb);
     this.setOpt(CurlOpt.HEADERFUNCTION, cb);
+  }
+
+  /**
+   * Set read callback function
+   */
+  setReadFunction(fn: ReadCallback): void {
+    const cb = wrapReadCallback(fn);
+    this._callbacks.push(cb);
+    this.setOpt(CurlOpt.READFUNCTION, cb);
   }
 
   /**
