@@ -71,6 +71,57 @@ describe("Session", () => {
       expect(json.form.username).toBe("test");
       expect(json.form.password).toBe("secret");
     });
+
+    it("should send multipart fields and buffer files", async () => {
+      const resp = await session.post(`${globalThis.TEST_SERVER_URL}/post`, {
+        multipart: [
+          { name: "title", value: "hello" },
+          {
+            name: "attachment",
+            value: Buffer.from("file body"),
+            filename: "note.txt",
+            contentType: "text/plain",
+          },
+        ],
+      });
+
+      const json = resp.json() as {
+        form: Record<string, string>;
+        files: Record<string, { filename: string; contentType: string; data: string; size: number }>;
+        headers: Record<string, string>;
+      };
+
+      expect(json.form.title).toBe("hello");
+      expect(json.files.attachment.filename).toBe("note.txt");
+      expect(json.files.attachment.contentType).toBe("text/plain");
+      expect(json.files.attachment.data).toBe("file body");
+      expect(json.files.attachment.size).toBe(9);
+      expect(json.headers["content-type"]).toContain("multipart/form-data");
+      expect(json.headers["content-type"]).toContain("boundary=");
+    });
+
+    it("should combine data fields with files in multipart requests", async () => {
+      const resp = await session.post(`${globalThis.TEST_SERVER_URL}/post`, {
+        data: { username: "test" },
+        files: {
+          avatar: {
+            filename: "avatar.txt",
+            content: Buffer.from("avatar data"),
+            contentType: "text/plain",
+          },
+        },
+      });
+
+      const json = resp.json() as {
+        form: Record<string, string>;
+        files: Record<string, { filename: string; contentType: string; data: string }>;
+      };
+
+      expect(json.form.username).toBe("test");
+      expect(json.files.avatar.filename).toBe("avatar.txt");
+      expect(json.files.avatar.contentType).toBe("text/plain");
+      expect(json.files.avatar.data).toBe("avatar data");
+    });
   });
 
   describe("PUT requests", () => {

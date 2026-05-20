@@ -274,6 +274,8 @@ await session.close();
 | `cookies` | `object` | Request cookies |
 | `data` | `object \| string` | Form data (application/x-www-form-urlencoded) |
 | `json` | `any` | JSON body (automatically sets Content-Type) |
+| `multipart` | `MultipartField[]` | Multipart form fields and file parts |
+| `files` | `object` | Files for multipart upload |
 | `content` | `string \| Buffer` | Raw body content |
 | `auth` | `object` | HTTP authentication (basic, digest, bearer) |
 | `proxy` | `string` | Proxy URL |

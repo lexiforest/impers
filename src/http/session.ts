@@ -9,6 +9,7 @@ import { Headers, type HeadersInit } from "./headers.js";
 import { Cookies, type CookiesInit, type Cookie } from "./cookies.js";
 import { Response } from "./response.js";
 import { SList } from "../core/slist.js";
+import { CurlMime } from "../core/mime.js";
 import {
   SessionClosed,
   HTTPError,
@@ -109,6 +110,7 @@ export class Session {
     // Create curl handle
     const curl = new Curl();
     const slists: SList[] = [];
+    const mimes: CurlMime[] = [];
 
     try {
       // Set URL
@@ -133,7 +135,10 @@ export class Session {
       }
 
       // Set body
-      this.setBody(curl, method, mergedOptions);
+      const mime = this.setBody(curl, method, mergedOptions);
+      if (mime) {
+        mimes.push(mime);
+      }
 
       // Set authentication
       this.setAuth(curl, mergedOptions);
@@ -266,6 +271,7 @@ export class Session {
     } finally {
       // Cleanup
       slists.forEach((s) => s.free());
+      mimes.forEach((m) => m.free());
       curl.cleanup();
     }
   }
@@ -495,8 +501,10 @@ export class Session {
       headers.set("Referer", options.referer);
     }
 
-    // Add Content-Type for body
-    if (options.json !== undefined && !headers.has("content-type")) {
+    // Let libcurl generate the multipart Content-Type with its boundary.
+    if (this.hasMultipartBody(options)) {
+      headers.delete("content-type");
+    } else if (options.json !== undefined && !headers.has("content-type")) {
       headers.set("Content-Type", "application/json");
     } else if (options.data !== undefined && !headers.has("content-type")) {
       headers.set("Content-Type", "application/x-www-form-urlencoded");
@@ -529,7 +537,38 @@ export class Session {
   /**
    * Set request body
    */
-  private setBody(curl: Curl, method: string, options: RequestOptions): void {
+  private setBody(curl: Curl, method: string, options: RequestOptions): CurlMime | null {
+    if (this.hasMultipartBody(options)) {
+      const mime = new CurlMime(curl);
+      this.addDataFieldsToMime(mime, options.data);
+
+      if (options.multipart) {
+        for (const field of options.multipart) {
+          this.addMultipartField(mime, field);
+        }
+      }
+
+      if (options.files) {
+        for (const [name, file] of Object.entries(options.files)) {
+          if (typeof file === "string") {
+            this.addFilePathPart(mime, name, file);
+          } else if (Buffer.isBuffer(file)) {
+            mime.addPart({ name, data: file, filename: name });
+          } else {
+            mime.addPart({
+              name,
+              data: file.content,
+              filename: file.filename,
+              contentType: file.contentType,
+            });
+          }
+        }
+      }
+
+      mime.attach(curl);
+      return mime;
+    }
+
     let body: Buffer | null = null;
 
     if (options.json !== undefined) {
@@ -561,7 +600,64 @@ export class Session {
       curl.setOpt(CurlOpt.POSTFIELDSIZE, 0);
     }
 
-    // TODO: Handle multipart/files with CurlMime
+    return null;
+  }
+
+  private hasMultipartBody(options: RequestOptions): boolean {
+    return options.multipart !== undefined || options.files !== undefined;
+  }
+
+  private addDataFieldsToMime(
+    mime: CurlMime,
+    data: RequestOptions["data"]
+  ): void {
+    if (data === undefined) {
+      return;
+    }
+
+    if (typeof data === "string") {
+      throw new Error("String data cannot be combined with multipart/files");
+    }
+
+    if (data instanceof URLSearchParams) {
+      data.forEach((value, name) => {
+        mime.addPart({ name, data: value });
+      });
+      return;
+    }
+
+    for (const [name, value] of Object.entries(data)) {
+      mime.addPart({ name, data: String(value) });
+    }
+  }
+
+  private addMultipartField(mime: CurlMime, field: MultipartField): void {
+    if (field.filepath) {
+      this.addFilePathPart(mime, field.name, field.filepath, field.filename, field.contentType);
+      return;
+    }
+
+    mime.addPart({
+      name: field.name,
+      data: field.value,
+      filename: field.filename,
+      contentType: field.contentType,
+    });
+  }
+
+  private addFilePathPart(
+    mime: CurlMime,
+    name: string,
+    filepath: string,
+    filename?: string,
+    contentType?: string
+  ): void {
+    mime.addPart({
+      name,
+      filepath,
+      filename,
+      contentType,
+    });
   }
 
   /**

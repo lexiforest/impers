@@ -7,8 +7,70 @@ import Fastify, { type FastifyInstance } from "fastify";
 let server: FastifyInstance | null = null;
 let serverPort = 0;
 
+interface ParsedMultipart {
+  form: Record<string, string>;
+  files: Record<string, { filename: string; contentType: string; data: string; size: number }>;
+}
+
+function parseMultipartBody(body: Buffer, contentType: string): ParsedMultipart {
+  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+  const boundary = boundaryMatch?.[1] || boundaryMatch?.[2];
+  const parsed: ParsedMultipart = { form: {}, files: {} };
+
+  if (!boundary) {
+    return parsed;
+  }
+
+  const text = body.toString("latin1");
+  const parts = text.split(`--${boundary}`).slice(1, -1);
+
+  for (const rawPart of parts) {
+    const part = rawPart.replace(/^\r\n/, "").replace(/\r\n$/, "");
+    const separator = part.indexOf("\r\n\r\n");
+    if (separator < 0) {
+      continue;
+    }
+
+    const headerText = part.slice(0, separator);
+    const bodyText = part.slice(separator + 4);
+    const headers = new Map<string, string>();
+
+    for (const line of headerText.split("\r\n")) {
+      const colon = line.indexOf(":");
+      if (colon > 0) {
+        headers.set(line.slice(0, colon).toLowerCase(), line.slice(colon + 1).trim());
+      }
+    }
+
+    const disposition = headers.get("content-disposition") || "";
+    const name = disposition.match(/(?:^|;\s*)name="([^"]*)"/)?.[1];
+    if (!name) {
+      continue;
+    }
+
+    const filename = disposition.match(/(?:^|;\s*)filename="([^"]*)"/)?.[1];
+    if (filename !== undefined) {
+      const contentTypeHeader = headers.get("content-type") || "";
+      parsed.files[name] = {
+        filename,
+        contentType: contentTypeHeader,
+        data: bodyText,
+        size: Buffer.byteLength(bodyText, "latin1"),
+      };
+    } else {
+      parsed.form[name] = bodyText;
+    }
+  }
+
+  return parsed;
+}
+
 export async function startMockServer(port = 0): Promise<number> {
   server = Fastify();
+
+  server.addContentTypeParser(/^multipart\/form-data/i, { parseAs: "buffer" }, (request, body, done) => {
+    done(null, parseMultipartBody(body as Buffer, request.headers["content-type"] || ""));
+  });
 
   // GET endpoint - returns request info
   server.get("/get", async (request, reply) => {
@@ -25,6 +87,7 @@ export async function startMockServer(port = 0): Promise<number> {
     let data = "";
     let json = null;
     let form: Record<string, string> = {};
+    let files: ParsedMultipart["files"] = {};
 
     const contentType = request.headers["content-type"] || "";
 
@@ -33,6 +96,10 @@ export async function startMockServer(port = 0): Promise<number> {
       data = JSON.stringify(request.body);
     } else if (contentType.includes("application/x-www-form-urlencoded")) {
       form = request.body as Record<string, string>;
+    } else if (contentType.includes("multipart/form-data")) {
+      const multipart = request.body as ParsedMultipart;
+      form = multipart.form;
+      files = multipart.files;
     } else {
       data = String(request.body || "");
     }
@@ -40,7 +107,7 @@ export async function startMockServer(port = 0): Promise<number> {
     return {
       args: request.query,
       data,
-      files: {},
+      files,
       form,
       headers: request.headers,
       json,

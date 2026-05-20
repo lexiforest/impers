@@ -41,3 +41,54 @@ const r6 = await impers.get("https://tls.peet.ws/api/all", {
   proxy: "socks5://localhost:1080",
 });
 ```
+
+## Request Bodies
+
+Use `json` for JSON payloads and `data` for `application/x-www-form-urlencoded`
+form payloads.
+
+```typescript
+await impers.post("https://httpbin.org/post", {
+  json: { message: "hello" },
+});
+
+await impers.post("https://httpbin.org/post", {
+  data: { username: "test", password: "secret" },
+});
+```
+
+Use `multipart` when you need explicit multipart parts, including filenames and
+content types. `impers` uses libcurl's MIME API and lets libcurl generate the
+`Content-Type: multipart/form-data` boundary.
+
+```typescript
+await impers.post("https://httpbin.org/post", {
+  multipart: [
+    { name: "title", value: "Quarterly report" },
+    {
+      name: "attachment",
+      value: Buffer.from("file contents"),
+      filename: "report.txt",
+      contentType: "text/plain",
+    },
+  ],
+});
+```
+
+For the common file upload shape, use `files`. A string value is treated as a
+local file path, a `Buffer` is uploaded with the field name as the filename, and
+an object lets you set the filename and content type.
+
+```typescript
+await impers.post("https://httpbin.org/post", {
+  data: { user: "alice" },
+  files: {
+    avatar: {
+      filename: "avatar.txt",
+      content: Buffer.from("avatar data"),
+      contentType: "text/plain",
+    },
+    screenshot: "/path/to/screenshot.png",
+  },
+});
+```
