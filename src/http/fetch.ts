@@ -400,7 +400,7 @@ export async function fetch(
     });
   }
 
-  return new Response(impersResponse.content as BodyInit, {
+  return new Response(new Uint8Array(impersResponse.content), {
     status: impersResponse.statusCode,
     statusText: impersResponse.reason,
     headers: convertImpersHeadersToGlobal(impersResponse.headers),
