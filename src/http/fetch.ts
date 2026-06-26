@@ -115,16 +115,6 @@ export interface ImpersRequestInit extends RequestInit {
 const DEFAULT_MAX_REDIRECTS = 20;
 
 /**
- * Build a TypeError that carries a `cause`, working across lib targets that
- * may not declare the `ErrorOptions` constructor signature.
- */
-function typeErrorWithCause(message: string, cause: unknown): TypeError {
-  const err = new TypeError(message);
-  (err as TypeError & { cause?: unknown }).cause = cause;
-  return err;
-}
-
-/**
  * Resolve the fetch `input` into a URL string, method and a partial init.
  *
  * When `input` is a global `Request`, its method/headers/body/signal/redirect
@@ -396,7 +386,7 @@ export async function fetch(
   } catch (error) {
     // Re-wrap network errors as TypeError (Fetch semantics), preserving cause.
     if (error instanceof RequestException) {
-      throw typeErrorWithCause(error.message, error);
+      throw new TypeError(error.message, { cause: error });
     }
     throw error;
   } finally {
@@ -405,10 +395,9 @@ export async function fetch(
 
   // redirect: "error" -> reject on 3xx
   if (redirect === "error" && impersResponse.statusCode >= 300 && impersResponse.statusCode < 400) {
-    throw typeErrorWithCause(
-      `redirect response (${impersResponse.statusCode}) not allowed`,
-      impersResponse,
-    );
+    throw new TypeError(`redirect response (${impersResponse.statusCode}) not allowed`, {
+      cause: impersResponse,
+    });
   }
 
   return new Response(impersResponse.content as BodyInit, {
