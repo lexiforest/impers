@@ -6,32 +6,10 @@
  * for connection pooling.
  */
 
-import { Session } from "./http/session.js";
 import { Response } from "./http/response.js";
+import { getSharedSession } from "./http/shared-session.js";
+export { closeSharedSession } from "./http/shared-session.js";
 import type { RequestOptions } from "./types/options.js";
-
-// Shared session for standalone requests
-let sharedSession: Session | null = null;
-
-/**
- * Get or create a shared session for standalone requests
- */
-function getSharedSession(): Session {
-  if (!sharedSession) {
-    sharedSession = new Session();
-  }
-  return sharedSession;
-}
-
-/**
- * Close the shared session (call this when your application exits)
- */
-export async function closeSharedSession(): Promise<void> {
-  if (sharedSession) {
-    await sharedSession.close();
-    sharedSession = null;
-  }
-}
 
 /**
  * Make an HTTP request
@@ -147,6 +125,10 @@ export async function options(url: string, options?: RequestOptions): Promise<Re
 export async function patch(url: string, options?: RequestOptions): Promise<Response> {
   return request("PATCH", url, options);
 }
+
+// Fetch API compatible interface
+export { fetch } from "./http/fetch.js";
+export type { ImpersRequestInit } from "./http/fetch.js";
 
 // Re-exports for convenience
 export { Session } from "./http/session.js";
