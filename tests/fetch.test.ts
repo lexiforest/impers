@@ -272,5 +272,15 @@ describe("fetch()", () => {
       });
       expect(res.status).toBe(200);
     });
+
+    it("should not persist cookies between fetch() calls", async () => {
+      // Set a cookie via the server, then make a second request to /cookies.
+      // If fetch() shared state, the cookie would be sent back; since each
+      // fetch() uses a fresh Session, the cookie jar must be empty.
+      await fetch(`${globalThis.TEST_SERVER_URL}/cookies/set?marker=1`);
+      const res = await fetch(`${globalThis.TEST_SERVER_URL}/cookies`);
+      const json = (await res.json()) as { cookies: Record<string, string> };
+      expect(Object.keys(json.cookies).length).toBe(0);
+    });
   });
 });

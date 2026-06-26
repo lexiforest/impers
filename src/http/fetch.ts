@@ -20,7 +20,6 @@
 
 import { Session } from "./session.js";
 import { Headers as ImpersHeaders, type HeadersInit as ImpersHeadersInit } from "./headers.js";
-import { getSharedSession } from "./shared-session.js";
 import { RequestException } from "../utils/errors.js";
 import type {
   RequestOptions,
@@ -123,16 +122,6 @@ function typeErrorWithCause(message: string, cause: unknown): TypeError {
   const err = new TypeError(message);
   (err as TypeError & { cause?: unknown }).cause = cause;
   return err;
-}
-
-/** @internal Shared session backing standalone `fetch()` calls. */
-let fetchSession: Session | null = null;
-
-function getFetchSession(): Session {
-  if (!fetchSession) {
-    fetchSession = getSharedSession();
-  }
-  return fetchSession;
 }
 
 /**
@@ -397,15 +386,21 @@ export async function fetch(
     await convertBody(effectiveInit.body, options);
   }
 
+  // Use a fresh Session per request so cookies/headers don't leak across
+  // stateless fetch() calls. The underlying CurlMulti connection pool is still
+  // shared (Session falls back to getSharedMulti()).
+  const session = new Session();
   let impersResponse;
   try {
-    impersResponse = await getFetchSession().request(method.toUpperCase(), url, options);
+    impersResponse = await session.request(method.toUpperCase(), url, options);
   } catch (error) {
     // Re-wrap network errors as TypeError (Fetch semantics), preserving cause.
     if (error instanceof RequestException) {
       throw typeErrorWithCause(error.message, error);
     }
     throw error;
+  } finally {
+    await session.close();
   }
 
   // redirect: "error" -> reject on 3xx

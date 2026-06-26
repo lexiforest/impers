@@ -6,10 +6,32 @@
  * for connection pooling.
  */
 
+import { Session } from "./http/session.js";
 import { Response } from "./http/response.js";
-import { getSharedSession } from "./http/shared-session.js";
-export { closeSharedSession } from "./http/shared-session.js";
 import type { RequestOptions } from "./types/options.js";
+
+// Shared session for standalone requests
+let sharedSession: Session | null = null;
+
+/**
+ * Get or create a shared session for standalone requests
+ */
+function getSharedSession(): Session {
+  if (!sharedSession) {
+    sharedSession = new Session();
+  }
+  return sharedSession;
+}
+
+/**
+ * Close the shared session (call this when your application exits)
+ */
+export async function closeSharedSession(): Promise<void> {
+  if (sharedSession) {
+    await sharedSession.close();
+    sharedSession = null;
+  }
+}
 
 /**
  * Make an HTTP request
