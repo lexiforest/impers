@@ -6,6 +6,7 @@ export interface Cookie {
   name: string;
   value: string;
   domain?: string;
+  domainSpecified?: boolean; // true: Domain attribute was explicit; false/absent: host-only
   path?: string;
   expires?: Date;
   maxAge?: number;
@@ -16,6 +17,7 @@ export interface Cookie {
 
 export interface CookieOptions {
   domain?: string;
+  domainSpecified?: boolean;
   path?: string;
   expires?: Date;
   maxAge?: number;
@@ -46,19 +48,22 @@ export class Cookies implements Iterable<Cookie> {
    * Generate a unique key for a cookie.
    * Strips leading dot from domain per RFC 6265 §5.2.3.
    */
-  private makeKey(name: string, domain?: string, path?: string): string {
+  private makeKey(name: string, domain?: string, path?: string, domainSpecified?: boolean): string {
     const normalizedDomain = domain?.replace(/^\./, "") || "";
-    return `${normalizedDomain}|${path || "/"}|${name}`;
+    return `${normalizedDomain}|${path || "/"}|${name}|${domainSpecified ? "1" : "0"}`;
   }
 
   /**
    * Set a cookie
    */
   set(name: string, value: string, options?: CookieOptions): void {
+    const domain = options?.domain?.replace(/^\./, "") || undefined;
+    const domainSpecified = options?.domainSpecified ?? Boolean(domain);
     const cookie: Cookie = {
       name,
       value,
-      domain: options?.domain?.replace(/^\./, "") || undefined,
+      domain,
+      domainSpecified,
       path: options?.path || "/",
       expires: options?.expires,
       maxAge: options?.maxAge,
@@ -67,7 +72,7 @@ export class Cookies implements Iterable<Cookie> {
       sameSite: options?.sameSite,
     };
 
-    const key = this.makeKey(name, cookie.domain, cookie.path);
+    const key = this.makeKey(name, cookie.domain, cookie.path, cookie.domainSpecified);
     this.cookies.set(key, cookie);
   }
 
@@ -75,14 +80,17 @@ export class Cookies implements Iterable<Cookie> {
    * Get a cookie value
    */
   get(name: string, domain?: string, path?: string): string | null {
-    // Try exact match first
-    const key = this.makeKey(name, domain, path);
-    const exact = this.cookies.get(key);
-    if (exact) {
-      return exact.value;
+    // Pass 1: exact scope match, no subdomain/path-prefix fuzz. Resolves a
+    // host-only vs. Domain-attribute collision deterministically by
+    // insertion order, and keeps a more specific cookie from being shadowed
+    // by a broader one that happened to be inserted first.
+    for (const cookie of this.cookies.values()) {
+      if (cookie.name !== name) continue;
+      if (!this.matchesExactScope(cookie, domain, path)) continue;
+      return cookie.value;
     }
 
-    // Search for matching cookie
+    // Pass 2: fuzzy fallback (subdomain/path-prefix matching)
     for (const cookie of this.cookies.values()) {
       if (cookie.name !== name) continue;
 
@@ -104,10 +112,11 @@ export class Cookies implements Iterable<Cookie> {
    * Get a cookie object
    */
   getCookie(name: string, domain?: string, path?: string): Cookie | null {
-    const key = this.makeKey(name, domain, path);
-    const exact = this.cookies.get(key);
-    if (exact) {
-      return exact;
+    // See get() above for the two-pass rationale.
+    for (const cookie of this.cookies.values()) {
+      if (cookie.name !== name) continue;
+      if (!this.matchesExactScope(cookie, domain, path)) continue;
+      return cookie;
     }
 
     for (const cookie of this.cookies.values()) {
@@ -131,12 +140,37 @@ export class Cookies implements Iterable<Cookie> {
    * Delete a cookie
    */
   delete(name: string, domain?: string, path?: string): boolean {
-    const key = this.makeKey(name, domain, path);
-    if (this.cookies.has(key)) {
-      return this.cookies.delete(key);
+    // Pass 1: delete an exact-key collision pair (a host-only and a
+    // Domain-attribute cookie sharing the same exact domain/path) without
+    // cascading into broader fuzzy matches. Deliberately mirrors the old
+    // single-key exact lookup's own defaulting (path defaults to "/", a
+    // missing domain normalizes to "") rather than using matchesExactScope()
+    // directly: that helper treats an omitted argument as "unconstrained on
+    // that axis", which is fine for get()/getCookie() (they return at most
+    // one value either way) but would be destructive here -- it would make
+    // "exact" match every cookie along the omitted axis, silently deleting
+    // far more than the one (or colliding pair of) cookie(s) a caller who
+    // omitted path actually meant. Checking both possible domainSpecified
+    // values at the same literal key is what makes this still delete both
+    // halves of a genuine collision, which the old single 3-part key could
+    // never represent.
+    const exactPath = path || "/";
+    const keyHostOnly = this.makeKey(name, domain, exactPath, false);
+    const keyDomainSpecified = this.makeKey(name, domain, exactPath, true);
+    let exactDeleted = false;
+    if (this.cookies.has(keyHostOnly)) {
+      this.cookies.delete(keyHostOnly);
+      exactDeleted = true;
+    }
+    if (this.cookies.has(keyDomainSpecified)) {
+      this.cookies.delete(keyDomainSpecified);
+      exactDeleted = true;
+    }
+    if (exactDeleted) {
+      return true;
     }
 
-    // Delete all matching cookies
+    // Pass 2: fuzzy fallback — delete every fuzzy match.
     let deleted = false;
     for (const [key, cookie] of this.cookies) {
       if (cookie.name !== name) continue;
@@ -248,6 +282,31 @@ export class Cookies implements Iterable<Cookie> {
   }
 
   /**
+   * Check whether a cookie's stored domain/path are an exact match for a
+   * query's domain/path (no subdomain or path-prefix fuzz). A domain or
+   * path argument that isn't provided imposes no constraint, matching the
+   * fuzzy scan's own "unconstrained means match anything" convention. A
+   * cookie missing the corresponding field is never an exact match for a
+   * provided argument -- it's left for the fuzzy fallback, which already
+   * treats a missing field as an unconditional pass-through.
+   */
+  private matchesExactScope(cookie: Cookie, domain?: string, path?: string): boolean {
+    if (domain) {
+      if (!cookie.domain) return false;
+      const normalizedQuery = domain.toLowerCase().replace(/^\./, "");
+      const normalizedCookie = cookie.domain.toLowerCase().replace(/^\./, "");
+      if (normalizedCookie !== normalizedQuery) return false;
+    }
+
+    if (path) {
+      if (!cookie.path) return false;
+      if (cookie.path !== path) return false;
+    }
+
+    return true;
+  }
+
+  /**
    * Check if cookie domain matches request domain
    */
   private matchesDomain(cookieDomain: string, requestDomain: string): boolean {
@@ -307,7 +366,7 @@ export class Cookies implements Iterable<Cookie> {
 
     for (const cookie of this.cookies.values()) {
       const domain = cookie.domain || "";
-      const includeSubdomains = cookie.domain ? "TRUE" : "FALSE";
+      const includeSubdomains = cookie.domainSpecified ? "TRUE" : "FALSE";
       const path = cookie.path || "/";
       const secure = cookie.secure ? "TRUE" : "FALSE";
       const expires = cookie.expires
@@ -342,6 +401,7 @@ export class Cookies implements Iterable<Cookie> {
       switch (lowerName) {
         case "domain":
           cookie.domain = attrValue?.replace(/^\./, "") || undefined;
+          cookie.domainSpecified = true;
           break;
         case "path":
           cookie.path = attrValue;
@@ -373,6 +433,7 @@ export class Cookies implements Iterable<Cookie> {
     if (requestUrl) {
       if (!cookie.domain) {
         cookie.domain = requestUrl.hostname;
+        cookie.domainSpecified = false;
       }
       if (!cookie.path) {
         cookie.path = requestUrl.pathname.replace(/\/[^/]*$/, "") || "/";
@@ -397,10 +458,11 @@ export class Cookies implements Iterable<Cookie> {
 
       const parts = line.split("\t");
       if (parts.length >= 7) {
-        const [domain, , path, secure, expires, name, value] = parts;
+        const [domain, includeSubdomains, path, secure, expires, name, value] = parts;
 
         cookies.set(name, value, {
           domain,
+          domainSpecified: includeSubdomains === "TRUE",
           path,
           secure: secure === "TRUE",
           expires: expires !== "0" ? new Date(parseInt(expires, 10) * 1000) : undefined,
