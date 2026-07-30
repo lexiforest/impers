@@ -15,6 +15,7 @@
     "dist"
   ],
   "scripts": {
+    "prepare": "npm run build",
     "build": "tsc -p tsconfig.json",
     "gen:ffi-consts": "node scripts/generate-ffi-constants.js",
     "lint": "eslint .",
