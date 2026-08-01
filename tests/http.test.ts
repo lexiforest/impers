@@ -1,9 +1,13 @@
 /**
  * Tests for HTTP requests using Session class
  */
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Session } from "../src/http/session.js";
 import { Headers } from "../src/http/headers.js";
 import { AbortError, get, post, put, del, patch } from "../src/public.js";
+import { Fingerprint, FingerprintManager } from "../src/fingerprints.js";
 
 describe("Session", () => {
   let session: Session;
@@ -48,6 +52,57 @@ describe("Session", () => {
       });
       const json = resp.json() as { headers: Record<string, string> };
       expect(json.headers).toHaveProperty("x-name", "");
+    });
+
+    it("should apply editable fingerprint headers without overriding request headers", async () => {
+      const fingerprint = new Fingerprint({
+        http_version: "v1",
+        tls_version: "",
+        headers: {
+          "User-Agent": "fingerprint-agent",
+          "X-Fingerprint": "fingerprint-value",
+        },
+      });
+
+      const resp = await session.get(`${globalThis.TEST_SERVER_URL}/headers`, {
+        impersonate: fingerprint,
+        headers: { "User-Agent": "request-agent" },
+      });
+      const json = resp.json() as { headers: Record<string, string> };
+
+      expect(json.headers["user-agent"]).toBe("request-agent");
+      expect(json.headers["x-fingerprint"]).toBe("fingerprint-value");
+    });
+
+    it("should apply a named fingerprint from the local cache", async () => {
+      const previousConfigDir = process.env.IMPERSONATE_CONFIG_DIR;
+      const configDir = mkdtempSync(join(tmpdir(), "impers-http-fingerprint-"));
+      process.env.IMPERSONATE_CONFIG_DIR = configDir;
+      writeFileSync(
+        FingerprintManager.getFingerprintPath(),
+        JSON.stringify({
+          cached_target: {
+            http_version: "v1",
+            tls_version: "",
+            headers: { "X-Cached-Fingerprint": "cached-value" },
+          },
+        })
+      );
+
+      try {
+        const resp = await session.get(`${globalThis.TEST_SERVER_URL}/headers`, {
+          impersonate: "cached_target",
+        });
+        const json = resp.json() as { headers: Record<string, string> };
+
+        expect(json.headers["x-cached-fingerprint"]).toBe("cached-value");
+      } finally {
+        if (previousConfigDir === undefined) {
+          delete process.env.IMPERSONATE_CONFIG_DIR;
+        } else {
+          process.env.IMPERSONATE_CONFIG_DIR = previousConfigDir;
+        }
+      }
     });
   });
 

@@ -5,7 +5,7 @@
  * when using curl-impersonate.
  */
 
-import { Curl } from "../core/easy.js";
+import type { Curl } from "../core/easy.js";
 import {
   CurlOpt,
   CurlSslVersion,
@@ -13,6 +13,7 @@ import {
   CurlImpersonateOpt,
 } from "../ffi/constants.js";
 import type { ExtraFingerprint } from "../types/options.js";
+import type { Fingerprint } from "../fingerprints.js";
 
 /**
  * TLS version mapping from JA3 hex codes to curl SSL version constants
@@ -327,22 +328,19 @@ function isGrease(value: number): boolean {
 /**
  * Toggle TLS extensions based on which extension IDs are enabled
  */
-function toggleExtensionsByIds(curl: Curl, enabledIds: Set<number>): void {
-  // All known toggleable extensions
-  const allToggleableExtensions = [
-    5,      // status_request
-    16,     // ALPN
-    18,     // signed_certificate_timestamp
-    27,     // compress_certificate
-    35,     // session_ticket
-    17513,  // application_settings (ALPS)
-    17613,  // application_settings new (ALPS new codepoint)
-    65037,  // encrypted_client_hello
-  ];
+export function toggleExtensionsByIds(curl: Curl, enabledIds: Set<number>): void {
+  const defaultEnabled = new Set([0, 10, 11, 13, 16, 23, 35, 43, 45, 51, 65281]);
 
-  for (const extId of allToggleableExtensions) {
-    const enable = enabledIds.has(extId);
-    toggleExtension(curl, extId, enable);
+  for (const extensionId of enabledIds) {
+    if (!defaultEnabled.has(extensionId)) {
+      toggleExtension(curl, extensionId, true);
+    }
+  }
+
+  for (const extensionId of defaultEnabled) {
+    if (!enabledIds.has(extensionId)) {
+      toggleExtension(curl, extensionId, false);
+    }
   }
 }
 
@@ -407,5 +405,216 @@ function toggleExtension(curl: Curl, extensionId: number, enable: boolean): void
     default:
       // Unknown or unsupported extension - silently ignore
       break;
+  }
+}
+
+function normalizeFingerprintHttpVersion(version: string): number {
+  const versions: Record<string, number> = {
+    v1: CurlHttpVersion.CURL_HTTP_VERSION_1_1,
+    v2: CurlHttpVersion.CURL_HTTP_VERSION_2_0,
+    v2tls: CurlHttpVersion.CURL_HTTP_VERSION_2TLS,
+    v2_prior_knowledge: CurlHttpVersion.CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE,
+    v3: CurlHttpVersion.CURL_HTTP_VERSION_3,
+    v3only: CurlHttpVersion.CURL_HTTP_VERSION_3ONLY,
+  };
+  const normalized = versions[version.trim().toLowerCase()];
+  if (normalized === undefined) {
+    throw new FingerprintError(`Unsupported HTTP version: ${version}`);
+  }
+  return normalized;
+}
+
+function normalizeFingerprintTlsVersion(version: string): number {
+  const versions: Record<string, number> = {
+    "1": CurlSslVersion.CURL_SSLVERSION_TLSv1,
+    "1.0": CurlSslVersion.CURL_SSLVERSION_TLSv1_0,
+    "1.1": CurlSslVersion.CURL_SSLVERSION_TLSv1_1,
+    "1.2": CurlSslVersion.CURL_SSLVERSION_TLSv1_2,
+    "1.3": CurlSslVersion.CURL_SSLVERSION_TLSv1_3,
+    tlsv1: CurlSslVersion.CURL_SSLVERSION_TLSv1,
+    tlsv1_0: CurlSslVersion.CURL_SSLVERSION_TLSv1_0,
+    tlsv1_1: CurlSslVersion.CURL_SSLVERSION_TLSv1_1,
+    tlsv1_2: CurlSslVersion.CURL_SSLVERSION_TLSv1_2,
+    tlsv1_3: CurlSslVersion.CURL_SSLVERSION_TLSv1_3,
+  };
+  const normalized = versions[version.trim().toLowerCase()];
+  if (normalized === undefined) {
+    throw new FingerprintError(`Unsupported TLS version: ${version}`);
+  }
+  return normalized;
+}
+
+function stripPaddingExtension(extensionOrder: string): string {
+  return extensionOrder
+    .split("-")
+    .filter((extension) => extension !== "21")
+    .join("-");
+}
+
+function normalizeSupportedGroup(group: string): string {
+  return group === "X25519Kyber768" ? "X25519Kyber768Draft00" : group;
+}
+
+function formatFingerprintHeaders(headers: Record<string, string>): string[] {
+  return Object.entries(headers).map(([name, value]) => `${name}: ${value}`);
+}
+
+/** Apply a downloaded or user-created Fingerprint to a curl handle. */
+export function applyFingerprintOptions(
+  curl: Curl,
+  fingerprint: Fingerprint,
+  defaultHeaders: boolean = true
+): void {
+  if (fingerprint.http_version) {
+    curl.setOpt(CurlOpt.HTTP_VERSION, normalizeFingerprintHttpVersion(fingerprint.http_version));
+  }
+
+  if (fingerprint.tls_version) {
+    const tlsVersion = normalizeFingerprintTlsVersion(fingerprint.tls_version);
+    curl.setOpt(
+      CurlOpt.SSLVERSION,
+      tlsVersion | CurlSslVersion.CURL_SSLVERSION_MAX_DEFAULT
+    );
+  }
+
+  if (fingerprint.tls_ciphers.length > 0) {
+    curl.setOpt(CurlOpt.SSL_CIPHER_LIST, fingerprint.tls_ciphers.join(":"));
+  }
+
+  if (fingerprint.tls_extension_order) {
+    const extensionOrder = stripPaddingExtension(fingerprint.tls_extension_order);
+    const extensionIds = new Set(
+      extensionOrder.split("-").filter(Boolean).map((extension) => Number(extension))
+    );
+    if ([...extensionIds].some((extension) => !Number.isInteger(extension))) {
+      throw new FingerprintError(
+        `Invalid TLS extension order: ${fingerprint.tls_extension_order}`
+      );
+    }
+    toggleExtensionsByIds(curl, extensionIds);
+    if (!fingerprint.tls_permute_extensions) {
+      curl.setOpt(CurlOpt.TLS_EXTENSION_ORDER, extensionOrder);
+    }
+  }
+
+  curl.setOpt(CurlOpt.SSL_ENABLE_ALPN, Number(fingerprint.tls_alpn));
+  curl.setOpt(CurlOpt.SSL_ENABLE_ALPS, Number(fingerprint.tls_alps));
+  curl.setOpt(CurlOpt.SSL_ENABLE_TICKET, Number(fingerprint.tls_session_ticket));
+  curl.setOpt(CurlOpt.TLS_GREASE, Number(fingerprint.tls_grease));
+  if (fingerprint.tls_use_new_alps_codepoint) {
+    curl.setOpt(CurlOpt.SSL_ENABLE_ALPS, 1);
+    curl.setOpt(CurlOpt.TLS_USE_NEW_ALPS_CODEPOINT, 1);
+  }
+  curl.setOpt(
+    CurlOpt.TLS_SIGNED_CERT_TIMESTAMPS,
+    Number(fingerprint.tls_signed_cert_timestamps)
+  );
+  curl.setOpt(CurlOpt.TLS_KEY_SHARES_LIMIT, fingerprint.tls_key_shares_limit);
+  curl.setOpt(
+    CurlOpt.SSL_CERT_COMPRESSION,
+    fingerprint.tls_cert_compression.join(",")
+  );
+
+  if (fingerprint.tls_signature_hashes.length > 0) {
+    curl.setOpt(CurlOpt.SSL_SIG_HASH_ALGS, fingerprint.tls_signature_hashes.join(","));
+  }
+  if (fingerprint.tls_supported_groups.length > 0) {
+    curl.setOpt(
+      CurlOpt.SSL_EC_CURVES,
+      fingerprint.tls_supported_groups.map(normalizeSupportedGroup).join(":")
+    );
+  }
+  if (fingerprint.tls_delegated_credentials.length > 0) {
+    curl.setOpt(
+      CurlOpt.TLS_DELEGATED_CREDENTIALS,
+      fingerprint.tls_delegated_credentials.join(":")
+    );
+  }
+  curl.setOpt(
+    CurlOpt.SSL_PERMUTE_EXTENSIONS,
+    Number(fingerprint.tls_permute_extensions)
+  );
+  if (fingerprint.tls_record_size_limit !== null) {
+    curl.setOpt(CurlOpt.TLS_RECORD_SIZE_LIMIT, fingerprint.tls_record_size_limit);
+  }
+  if (fingerprint.tls_ech !== null) {
+    curl.setOpt(CurlOpt.ECH, fingerprint.tls_ech);
+  }
+
+  if (fingerprint.http2_settings) {
+    curl.setOpt(CurlOpt.HTTP2_SETTINGS, fingerprint.http2_settings);
+  }
+  if (fingerprint.http2_window_update) {
+    curl.setOpt(CurlOpt.HTTP2_WINDOW_UPDATE, fingerprint.http2_window_update);
+  }
+  if (fingerprint.http2_pseudo_headers_order) {
+    curl.setOpt(
+      CurlOpt.HTTP2_PSEUDO_HEADERS_ORDER,
+      fingerprint.http2_pseudo_headers_order.replace(/,/g, "")
+    );
+  }
+  if (fingerprint.http2_stream_weight !== null) {
+    curl.setOpt(CurlOpt.STREAM_WEIGHT, fingerprint.http2_stream_weight);
+  }
+  if (fingerprint.http2_stream_exclusive !== null) {
+    curl.setOpt(CurlOpt.STREAM_EXCLUSIVE, fingerprint.http2_stream_exclusive);
+  }
+  if (fingerprint.http2_no_priority) {
+    curl.setOpt(CurlOpt.HTTP2_NO_PRIORITY, 1);
+  }
+
+  if (fingerprint.header_order) {
+    curl.setOpt(CurlOpt.HTTPHEADER_ORDER, fingerprint.header_order);
+  }
+  curl.setOpt(CurlOpt.SPLIT_COOKIES, Number(fingerprint.split_cookies));
+  if (fingerprint.form_boundary) {
+    curl.setOpt(CurlOpt.FORM_BOUNDARY, fingerprint.form_boundary);
+  }
+
+  if (fingerprint.http3_settings) {
+    curl.setOpt(CurlOpt.HTTP3_SETTINGS, fingerprint.http3_settings);
+  }
+  if (fingerprint.http3_pseudo_headers_order) {
+    curl.setOpt(
+      CurlOpt.HTTP3_PSEUDO_HEADERS_ORDER,
+      fingerprint.http3_pseudo_headers_order.replace(/,/g, "")
+    );
+  }
+  if (fingerprint.http3_tls_extension_order) {
+    curl.setOpt(CurlOpt.HTTP3_TLS_EXTENSION_ORDER, fingerprint.http3_tls_extension_order);
+  }
+  if (fingerprint.http3_header_order) {
+    curl.setOpt(CurlOpt.HTTP3_HTTPHEADER_ORDER, fingerprint.http3_header_order);
+  }
+  if (fingerprint.http3_tls_supported_groups.length > 0) {
+    curl.setOpt(
+      CurlOpt.HTTP3_SSL_EC_CURVES,
+      fingerprint.http3_tls_supported_groups.map(normalizeSupportedGroup).join(":")
+    );
+  }
+  if (fingerprint.quic_transport_parameters) {
+    curl.setOpt(CurlOpt.QUIC_TRANSPORT_PARAMETERS, fingerprint.quic_transport_parameters);
+  }
+  if (defaultHeaders && Object.keys(fingerprint.http3_headers).length > 0) {
+    curl.setStringList(
+      CurlOpt.HTTP3_HTTPHEADER,
+      formatFingerprintHeaders(fingerprint.http3_headers)
+    );
+  }
+
+  if (fingerprint.ws_header_order) {
+    curl.setOpt(CurlOpt.WS_HTTPHEADER_ORDER, fingerprint.ws_header_order);
+  }
+  if (fingerprint.ws_disable_session_ticket) {
+    curl.setOpt(CurlOpt.WS_SSL_DISABLE_TICKET, 1);
+  }
+  if (fingerprint.ws_tls_cert_compression !== null) {
+    curl.setOpt(
+      CurlOpt.WS_SSL_CERT_COMPRESSION,
+      fingerprint.ws_tls_cert_compression.join(",")
+    );
+  }
+  if (defaultHeaders && Object.keys(fingerprint.ws_headers).length > 0) {
+    curl.setStringList(CurlOpt.WS_HTTPHEADER, formatFingerprintHeaders(fingerprint.ws_headers));
   }
 }

@@ -119,11 +119,11 @@ await session.close();
 
 | Browser | Versions |
 |---------|----------|
-| Chrome | chrome99, chrome100, chrome101, chrome104, chrome107, chrome110, chrome116, chrome119, chrome120, chrome123, chrome124, chrome131, chrome133a, chrome136, chrome142 |
+| Chrome | chrome99, chrome100, chrome101, chrome104, chrome107, chrome110, chrome116, chrome119, chrome120, chrome123, chrome124, chrome131, chrome133a, chrome136, chrome142, chrome145, chrome146 |
 | Chrome Android | chrome99_android, chrome131_android |
 | Safari | safari153, safari155, safari170, safari180, safari184, safari260, safari2601 |
 | Safari iOS | safari172_ios, safari180_ios, safari184_ios, safari260_ios |
-| Firefox | firefox133, firefox135, firefox144 |
+| Firefox | firefox133, firefox135, firefox144, firefox147 |
 | Tor | tor145 |
 | Edge | edge99, edge101 |
 
@@ -156,6 +156,28 @@ const extraFp: impers.ExtraFingerprint = {
 };
 
 const r2 = await impers.get("https://tls.peet.ws/api/all", { extraFp });
+```
+
+### Managed Fingerprints
+
+The `impers` command only manages fingerprint API access and the local cache:
+
+```bash
+impers config --api-key imp_your_api_key
+impers update
+impers list
+impers list --json
+```
+
+Use a cached target name directly, or edit a copied `Fingerprint` before sending it:
+
+```typescript
+const fingerprint = impers.getFingerprint("edge_146_macos_26");
+fingerprint.headers["User-Agent"] = "custom user agent";
+
+const response = await impers.get("https://example.com", {
+  impersonate: fingerprint,
+});
 ```
 
 ### Concurrent Requests
@@ -286,7 +308,7 @@ await session.close();
 | `allowRedirects` | `boolean` | Follow redirects (default: true) |
 | `maxRedirects` | `number` | Maximum redirects (default: 30) |
 | `verify` | `boolean` | Verify SSL certificates (default: true) |
-| `impersonate` | `string` | Browser to impersonate |
+| `impersonate` | `string \| Fingerprint` | Builtin/cached target or editable fingerprint |
 | `ja3` | `string` | JA3 TLS fingerprint string |
 | `akamai` | `string` | Akamai HTTP/2 fingerprint string |
 | `extraFp` | `ExtraFingerprint` | Fine-grained fingerprint options |
