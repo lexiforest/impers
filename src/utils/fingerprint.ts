@@ -174,19 +174,6 @@ export function setJa3Options(curl: Curl, ja3: string, permute: boolean = false)
     extensionStr = extensionStr.slice(0, -3);
   }
 
-  const extensionIds = new Set<number>();
-  for (const ext of extensionStr.split("-")) {
-    if (!ext) continue;
-    const extId = parseInt(ext, 10);
-    // Skip GREASE values
-    if (!isGrease(extId)) {
-      extensionIds.add(extId);
-    }
-  }
-
-  // Toggle extensions based on which ones are present
-  toggleExtensionsByIds(curl, extensionIds);
-
   // Set extension order if not permuting
   if (!permute && extensionStr) {
     curl.setOpt(CurlImpersonateOpt.CURLOPT_TLS_EXTENSION_ORDER, extensionStr);
@@ -325,89 +312,6 @@ function isGrease(value: number): boolean {
   return high === low && (high & 0x0f) === 0x0a;
 }
 
-/**
- * Toggle TLS extensions based on which extension IDs are enabled
- */
-export function toggleExtensionsByIds(curl: Curl, enabledIds: Set<number>): void {
-  const defaultEnabled = new Set([0, 10, 11, 13, 16, 23, 35, 43, 45, 51, 65281]);
-
-  for (const extensionId of enabledIds) {
-    if (!defaultEnabled.has(extensionId)) {
-      toggleExtension(curl, extensionId, true);
-    }
-  }
-
-  for (const extensionId of defaultEnabled) {
-    if (!enabledIds.has(extensionId)) {
-      toggleExtension(curl, extensionId, false);
-    }
-  }
-}
-
-/**
- * Toggle a specific TLS extension on or off
- */
-function toggleExtension(curl: Curl, extensionId: number, enable: boolean): void {
-  switch (extensionId) {
-    // ECH - Encrypted Client Hello
-    case 65037:
-      curl.setOpt(CurlOpt.ECH, enable ? "grease" : "");
-      break;
-
-    // Certificate compression
-    case 27:
-      curl.setOpt(
-        CurlImpersonateOpt.CURLOPT_SSL_CERT_COMPRESSION,
-        enable ? "brotli" : ""
-      );
-      break;
-
-    // ALPS - Application Settings (old codepoint)
-    case 17513:
-      curl.setOpt(CurlImpersonateOpt.CURLOPT_SSL_ENABLE_ALPS, enable ? 1 : 0);
-      break;
-
-    // ALPS - Application Settings (new codepoint)
-    case 17613:
-      curl.setOpt(CurlImpersonateOpt.CURLOPT_SSL_ENABLE_ALPS, enable ? 1 : 0);
-      curl.setOpt(CurlImpersonateOpt.CURLOPT_TLS_USE_NEW_ALPS_CODEPOINT, enable ? 1 : 0);
-      break;
-
-    // ALPN - Application Layer Protocol Negotiation
-    case 16:
-      curl.setOpt(CurlOpt.SSL_ENABLE_ALPN, enable ? 1 : 0);
-      break;
-
-    // OCSP Status Request
-    case 5:
-      curl.setOpt(CurlImpersonateOpt.CURLOPT_TLS_STATUS_REQUEST, enable ? 1 : 0);
-      break;
-
-    // Signed Certificate Timestamps
-    case 18:
-      curl.setOpt(CurlImpersonateOpt.CURLOPT_TLS_SIGNED_CERT_TIMESTAMPS, enable ? 1 : 0);
-      break;
-
-    // Session Ticket
-    case 35:
-      curl.setOpt(CurlImpersonateOpt.CURLOPT_SSL_ENABLE_TICKET, enable ? 1 : 0);
-      break;
-
-    // Padding extension (21) - managed by SSL engine, ignore
-    case 21:
-      break;
-
-    // Delegated credentials (34) and record size limit (28) - handled by extra_fp
-    case 34:
-    case 28:
-      break;
-
-    default:
-      // Unknown or unsupported extension - silently ignore
-      break;
-  }
-}
-
 function normalizeFingerprintHttpVersion(version: string): number {
   const versions: Record<string, number> = {
     v1: CurlHttpVersion.CURL_HTTP_VERSION_1_1,
@@ -483,15 +387,6 @@ export function applyFingerprintOptions(
 
   if (fingerprint.tls_extension_order) {
     const extensionOrder = stripPaddingExtension(fingerprint.tls_extension_order);
-    const extensionIds = new Set(
-      extensionOrder.split("-").filter(Boolean).map((extension) => Number(extension))
-    );
-    if ([...extensionIds].some((extension) => !Number.isInteger(extension))) {
-      throw new FingerprintError(
-        `Invalid TLS extension order: ${fingerprint.tls_extension_order}`
-      );
-    }
-    toggleExtensionsByIds(curl, extensionIds);
     if (!fingerprint.tls_permute_extensions) {
       curl.setOpt(CurlOpt.TLS_EXTENSION_ORDER, extensionOrder);
     }
@@ -505,10 +400,10 @@ export function applyFingerprintOptions(
     curl.setOpt(CurlOpt.SSL_ENABLE_ALPS, 1);
     curl.setOpt(CurlOpt.TLS_USE_NEW_ALPS_CODEPOINT, 1);
   }
-  curl.setOpt(
-    CurlOpt.TLS_SIGNED_CERT_TIMESTAMPS,
-    Number(fingerprint.tls_signed_cert_timestamps)
-  );
+  // Explicit extension orders are allowlists in BoringSSL, so enable these
+  // capabilities here and let the selected order suppress them.
+  curl.setOpt(CurlOpt.TLS_STATUS_REQUEST, 1);
+  curl.setOpt(CurlOpt.TLS_SIGNED_CERT_TIMESTAMPS, 1);
   curl.setOpt(CurlOpt.TLS_KEY_SHARES_LIMIT, fingerprint.tls_key_shares_limit);
   curl.setOpt(
     CurlOpt.SSL_CERT_COMPRESSION,

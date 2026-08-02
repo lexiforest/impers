@@ -112,6 +112,8 @@ describe("Fingerprint", () => {
     expect(curl.options.get(CurlOpt.SSL_EC_CURVES))
       .toBe("X25519Kyber768Draft00:P-256");
     expect(curl.options.get(CurlOpt.SSL_CERT_COMPRESSION)).toBe("zlib");
+    expect(curl.options.get(CurlOpt.TLS_STATUS_REQUEST)).toBe(1);
+    expect(curl.options.get(CurlOpt.TLS_SIGNED_CERT_TIMESTAMPS)).toBe(1);
     expect(curl.options.get(CurlOpt.HTTP2_SETTINGS)).toBe("1:65536;3:1000");
     expect(curl.options.get(CurlOpt.HTTPHEADER_ORDER)).toBe("User-Agent,Host");
     expect(curl.options.get(CurlOpt.HTTP3_HTTPHEADER_ORDER)).toBe("User-Agent");
