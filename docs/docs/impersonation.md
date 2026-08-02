@@ -23,13 +23,13 @@ We have comprehensive browser tls, http and JavaScript fingerprints database for
 After installing the package, run:
 
 ```sh
-impers --help
+npx impers --help
 ```
 
 To save an impersonate.pro API key:
 
 ```sh
-impers config --api-key imp_your_api_key
+npx impers config --api-key imp_your_api_key
 ```
 
 The API key is stored in `config.json` under the impersonate config directory. You can override the directory with `IMPERSONATE_CONFIG_DIR`, override the API root with `IMPERSONATE_API_ROOT`, or provide the key directly with `IMPERSONATE_API_KEY`.
@@ -37,19 +37,19 @@ The API key is stored in `config.json` under the impersonate config directory. Y
 To fetch the latest fingerprints into the local cache:
 
 ```sh
-impers update
+npx impers update
 ```
 
 To view available builtin and cached fingerprints:
 
 ```sh
-impers list
+npx impers list
 ```
 
 For machine-readable output:
 
 ```sh
-impers list --json
+npx impers list --json
 ```
 
 Cached fingerprint names can be passed to the normal `impersonate` request option:

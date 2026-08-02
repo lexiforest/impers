@@ -70,6 +70,9 @@ const SYSTEM_LIBCURL_SEARCH_PATHS: Record<string, string[]> = {
 };
 
 const LIB_PREFIX = "libcurl-impersonate";
+export const LIBCURL_IMPERSONATE_VERSION = "v2.0.0";
+export const LIBCURL_IMPERSONATE_RELEASE_URL =
+  `https://api.github.com/repos/lexiforest/curl-impersonate/releases/tags/${LIBCURL_IMPERSONATE_VERSION}`;
 const CACHE_LOCK_POLL_MS = 100;
 const CACHE_LOCK_STALE_MS = 5 * 60 * 1000;
 const CACHE_LOCK_TIMEOUT_MS = 3 * 60 * 1000;
@@ -366,7 +369,7 @@ async function downloadImpersonate(cacheRoot: string, platform: string, arch: st
   const libExt = PLATFORM_LIB_EXT[platform] || ".so";
   const targetDir = getCacheDir(cacheRoot, platform, arch);
   const apiUrl = process.env.IMPER_LIBCURL_RELEASE_URL ||
-    "https://api.github.com/repos/lexiforest/curl-impersonate/releases/latest";
+    LIBCURL_IMPERSONATE_RELEASE_URL;
   const headers = {
     "User-Agent": "impers",
     "Accept": "application/vnd.github+json",

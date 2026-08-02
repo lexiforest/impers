@@ -45,13 +45,18 @@ npm install impers
 
 **libcurl-impersonate**: For full fingerprinting support, you need [curl-impersonate](https://github.com/lexiforest/curl-impersonate) installed. Standard libcurl works but without impersonation features.
 
-Luckily, if you have a internet connection, `impers` will download curl-impersonate at the first launch.
+Luckily, if you have an internet connection, `impers` will download latestcurl-impersonate,
+currently `v2.0.0`, at the first launch. The version is pinned so fresh installations use the
+same native library release.
 
 If you will to use your own version, set the `LIBCURL_PATH` environment variable:
 
 ```sh
 export LIBCURL_PATH=/path/to/libcurl-impersonate.so
 ```
+
+Set `IMPERS_LIBCURL_RELEASE_URL` to a GitHub release API URL to override the pinned
+download release.
 
 ## Usage
 
@@ -163,16 +168,16 @@ const r2 = await impers.get("https://tls.peet.ws/api/all", { extraFp });
 The `impers` command only manages fingerprint API access and the local cache:
 
 ```bash
-impers config --api-key imp_your_api_key
-impers update
-impers list
-impers list --json
+npx impers config --api-key YOUR_API_KEY
+npx impers update
+npx impers list
+npx impers list --json
 ```
 
 Use a cached target name directly, or edit a copied `Fingerprint` before sending it:
 
 ```typescript
-const fingerprint = impers.getFingerprint("edge_146_macos_26");
+const fingerprint = impers.getFingerprint("chrome_152_macos_26.0");
 fingerprint.headers["User-Agent"] = "custom user agent";
 
 const response = await impers.get("https://example.com", {
