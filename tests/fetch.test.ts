@@ -37,6 +37,13 @@ describe("fetch()", () => {
       expect(res.status).toBe(200);
     });
 
+    it("should preserve GET for a bodyless Request input", async () => {
+      const req = new Request(`${globalThis.TEST_SERVER_URL}/anything`);
+      const res = await fetch(req);
+      const json = (await res.json()) as { method: string };
+      expect(json.method).toBe("GET");
+    });
+
     it("should send custom headers", async () => {
       const res = await fetch(`${globalThis.TEST_SERVER_URL}/headers`, {
         headers: { "X-Custom-Header": "fetch-value" },
@@ -60,10 +67,10 @@ describe("fetch()", () => {
       const res = await fetch(`${globalThis.TEST_SERVER_URL}/post`, {
         method: "POST",
         body: "hello-body",
-        headers: { "Content-Type": "text/plain" },
       });
-      const json = (await res.json()) as { data: string };
+      const json = (await res.json()) as { data: string; headers: Record<string, string> };
       expect(json.data).toBe("hello-body");
+      expect(json.headers["content-type"]).toBe("text/plain;charset=UTF-8");
     });
 
     it("should send a JSON body via string", async () => {
@@ -84,9 +91,15 @@ describe("fetch()", () => {
         method: "POST",
         body: params,
       });
-      const json = (await res.json()) as { form: Record<string, string> };
+      const json = (await res.json()) as {
+        form: Record<string, string>;
+        headers: Record<string, string>;
+      };
       expect(json.form.username).toBe("test");
       expect(json.form.password).toBe("secret");
+      expect(json.headers["content-type"]).toBe(
+        "application/x-www-form-urlencoded;charset=UTF-8",
+      );
     });
 
     it("should send an ArrayBuffer/Uint8Array body", async () => {
@@ -106,10 +119,10 @@ describe("fetch()", () => {
       const res = await fetch(`${globalThis.TEST_SERVER_URL}/post`, {
         method: "POST",
         body: blob,
-        headers: { "Content-Type": "text/plain" },
       });
-      const json = (await res.json()) as { data: string };
+      const json = (await res.json()) as { data: string; headers: Record<string, string> };
       expect(json.data).toBe("blob-content");
+      expect(json.headers["content-type"]).toBe("text/plain");
     });
 
     it("should send a FormData body", async () => {
@@ -154,6 +167,26 @@ describe("fetch()", () => {
       const res = await fetch(req, { body: "overridden" });
       const json = (await res.json()) as { data: string };
       expect(json.data).toBe("overridden");
+    });
+
+    it("should reject a consumed Request without a replacement body", async () => {
+      const req = new Request(`${globalThis.TEST_SERVER_URL}/post`, {
+        method: "POST",
+        body: "consumed",
+      });
+      await req.text();
+      await expect(fetch(req)).rejects.toBeInstanceOf(TypeError);
+    });
+
+    it("should allow a consumed Request with a replacement body", async () => {
+      const req = new Request(`${globalThis.TEST_SERVER_URL}/post`, {
+        method: "POST",
+        body: "consumed",
+      });
+      await req.text();
+      const res = await fetch(req, { body: "replacement" });
+      const json = (await res.json()) as { data: string };
+      expect(json.data).toBe("replacement");
     });
   });
 
@@ -232,6 +265,18 @@ describe("fetch()", () => {
   });
 
   describe("Body semantics", () => {
+    it.each([204, 205, 304])("should return a null body for status %i", async (status) => {
+      const res = await fetch(`${globalThis.TEST_SERVER_URL}/status/${status}`);
+      expect(res.status).toBe(status);
+      expect(res.body).toBeNull();
+    });
+
+    it("should return a null body for HEAD responses", async () => {
+      const res = await fetch(`${globalThis.TEST_SERVER_URL}/get`, { method: "HEAD" });
+      expect(res.status).toBe(200);
+      expect(res.body).toBeNull();
+    });
+
     it("should mark bodyUsed true after text()", async () => {
       const res = await fetch(`${globalThis.TEST_SERVER_URL}/get`);
       await res.text();

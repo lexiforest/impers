@@ -149,9 +149,16 @@ async function resolveInput(
   if (merged.headers === undefined) {
     merged.headers = input.headers;
   }
-  if (merged.body === undefined && !input.bodyUsed) {
-    // Reading the Request body may be async (Blob/FormData etc.).
-    merged.body = await input.arrayBuffer();
+  // A null body in init does not replace a Request's existing body. This
+  // matches the Request constructor semantics used by the native fetch API.
+  if (merged.body === undefined || merged.body === null) {
+    if (input.bodyUsed && input.body !== null) {
+      throw new TypeError("Cannot fetch a Request whose body has already been used");
+    }
+    if (input.body !== null) {
+      // Reading the Request body may be async (Blob/FormData etc.).
+      merged.body = await input.arrayBuffer();
+    }
   }
 
   return { url: input.url, init: merged };
@@ -182,6 +189,15 @@ function convertImpersHeadersToGlobal(headers: ImpersHeaders): Headers {
   return new Headers(Array.from(headers.entries()));
 }
 
+/** Set a body-derived Content-Type unless the caller already supplied one. */
+function setDefaultContentType(options: RequestOptions, contentType: string): void {
+  const headers = new ImpersHeaders(options.headers);
+  if (!headers.has("content-type")) {
+    headers.set("Content-Type", contentType);
+  }
+  options.headers = headers;
+}
+
 /**
  * Convert a global `BodyInit` into impers' `RequestOptions` body fields.
  *
@@ -194,6 +210,7 @@ async function convertBody(body: BodyInit, options: RequestOptions): Promise<voi
 
   if (typeof body === "string") {
     options.content = body;
+    setDefaultContentType(options, "text/plain;charset=UTF-8");
     return;
   }
 
@@ -211,12 +228,16 @@ async function convertBody(body: BodyInit, options: RequestOptions): Promise<voi
 
   if (body instanceof URLSearchParams) {
     options.data = body;
+    setDefaultContentType(options, "application/x-www-form-urlencoded;charset=UTF-8");
     return;
   }
 
   // Blob (Node's buffer.Blob or undici Blob)
   if (typeof Blob !== "undefined" && body instanceof Blob) {
     options.content = Buffer.from(await body.arrayBuffer());
+    if (body.type) {
+      setDefaultContentType(options, body.type);
+    }
     return;
   }
 
@@ -400,7 +421,12 @@ export async function fetch(
     });
   }
 
-  return new Response(new Uint8Array(impersResponse.content), {
+  const nullBody = method.toUpperCase() === "HEAD"
+    || impersResponse.statusCode === 204
+    || impersResponse.statusCode === 205
+    || impersResponse.statusCode === 304;
+
+  return new Response(nullBody ? null : new Uint8Array(impersResponse.content), {
     status: impersResponse.statusCode,
     statusText: impersResponse.reason,
     headers: convertImpersHeadersToGlobal(impersResponse.headers),
