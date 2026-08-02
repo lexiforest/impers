@@ -5,7 +5,7 @@
  * when using curl-impersonate.
  */
 
-import { Curl } from "../core/easy.js";
+import type { Curl } from "../core/easy.js";
 import {
   CurlOpt,
   CurlSslVersion,
@@ -13,6 +13,7 @@ import {
   CurlImpersonateOpt,
 } from "../ffi/constants.js";
 import type { ExtraFingerprint } from "../types/options.js";
+import type { Fingerprint } from "../fingerprints.js";
 
 /**
  * TLS version mapping from JA3 hex codes to curl SSL version constants
@@ -173,19 +174,6 @@ export function setJa3Options(curl: Curl, ja3: string, permute: boolean = false)
     extensionStr = extensionStr.slice(0, -3);
   }
 
-  const extensionIds = new Set<number>();
-  for (const ext of extensionStr.split("-")) {
-    if (!ext) continue;
-    const extId = parseInt(ext, 10);
-    // Skip GREASE values
-    if (!isGrease(extId)) {
-      extensionIds.add(extId);
-    }
-  }
-
-  // Toggle extensions based on which ones are present
-  toggleExtensionsByIds(curl, extensionIds);
-
   // Set extension order if not permuting
   if (!permute && extensionStr) {
     curl.setOpt(CurlImpersonateOpt.CURLOPT_TLS_EXTENSION_ORDER, extensionStr);
@@ -324,88 +312,184 @@ function isGrease(value: number): boolean {
   return high === low && (high & 0x0f) === 0x0a;
 }
 
-/**
- * Toggle TLS extensions based on which extension IDs are enabled
- */
-function toggleExtensionsByIds(curl: Curl, enabledIds: Set<number>): void {
-  // All known toggleable extensions
-  const allToggleableExtensions = [
-    5,      // status_request
-    16,     // ALPN
-    18,     // signed_certificate_timestamp
-    27,     // compress_certificate
-    35,     // session_ticket
-    17513,  // application_settings (ALPS)
-    17613,  // application_settings new (ALPS new codepoint)
-    65037,  // encrypted_client_hello
-  ];
-
-  for (const extId of allToggleableExtensions) {
-    const enable = enabledIds.has(extId);
-    toggleExtension(curl, extId, enable);
+function normalizeFingerprintTlsVersion(version: string): number {
+  const versions: Record<string, number> = {
+    "1": CurlSslVersion.CURL_SSLVERSION_TLSv1,
+    "1.0": CurlSslVersion.CURL_SSLVERSION_TLSv1_0,
+    "1.1": CurlSslVersion.CURL_SSLVERSION_TLSv1_1,
+    "1.2": CurlSslVersion.CURL_SSLVERSION_TLSv1_2,
+    "1.3": CurlSslVersion.CURL_SSLVERSION_TLSv1_3,
+    tlsv1: CurlSslVersion.CURL_SSLVERSION_TLSv1,
+    tlsv1_0: CurlSslVersion.CURL_SSLVERSION_TLSv1_0,
+    tlsv1_1: CurlSslVersion.CURL_SSLVERSION_TLSv1_1,
+    tlsv1_2: CurlSslVersion.CURL_SSLVERSION_TLSv1_2,
+    tlsv1_3: CurlSslVersion.CURL_SSLVERSION_TLSv1_3,
+  };
+  const normalized = versions[version.trim().toLowerCase()];
+  if (normalized === undefined) {
+    throw new FingerprintError(`Unsupported TLS version: ${version}`);
   }
+  return normalized;
 }
 
-/**
- * Toggle a specific TLS extension on or off
- */
-function toggleExtension(curl: Curl, extensionId: number, enable: boolean): void {
-  switch (extensionId) {
-    // ECH - Encrypted Client Hello
-    case 65037:
-      curl.setOpt(CurlOpt.ECH, enable ? "grease" : "");
-      break;
+function stripPaddingExtension(extensionOrder: string): string {
+  return extensionOrder
+    .split("-")
+    .filter((extension) => extension !== "21")
+    .join("-");
+}
 
-    // Certificate compression
-    case 27:
-      curl.setOpt(
-        CurlImpersonateOpt.CURLOPT_SSL_CERT_COMPRESSION,
-        enable ? "brotli" : ""
-      );
-      break;
+function normalizeSupportedGroup(group: string): string {
+  return group === "X25519Kyber768" ? "X25519Kyber768Draft00" : group;
+}
 
-    // ALPS - Application Settings (old codepoint)
-    case 17513:
-      curl.setOpt(CurlImpersonateOpt.CURLOPT_SSL_ENABLE_ALPS, enable ? 1 : 0);
-      break;
+function formatFingerprintHeaders(headers: Record<string, string>): string[] {
+  return Object.entries(headers).map(([name, value]) => `${name}: ${value}`);
+}
 
-    // ALPS - Application Settings (new codepoint)
-    case 17613:
-      curl.setOpt(CurlImpersonateOpt.CURLOPT_SSL_ENABLE_ALPS, enable ? 1 : 0);
-      curl.setOpt(CurlImpersonateOpt.CURLOPT_TLS_USE_NEW_ALPS_CODEPOINT, enable ? 1 : 0);
-      break;
+/** Apply a downloaded or user-created Fingerprint to a curl handle. */
+export function applyFingerprintOptions(
+  curl: Curl,
+  fingerprint: Fingerprint,
+  defaultHeaders: boolean = true
+): void {
+  if (fingerprint.tls_version) {
+    const tlsVersion = normalizeFingerprintTlsVersion(fingerprint.tls_version);
+    curl.setOpt(
+      CurlOpt.SSLVERSION,
+      tlsVersion | CurlSslVersion.CURL_SSLVERSION_MAX_DEFAULT
+    );
+  }
 
-    // ALPN - Application Layer Protocol Negotiation
-    case 16:
-      curl.setOpt(CurlOpt.SSL_ENABLE_ALPN, enable ? 1 : 0);
-      break;
+  if (fingerprint.tls_ciphers.length > 0) {
+    curl.setOpt(CurlOpt.SSL_CIPHER_LIST, fingerprint.tls_ciphers.join(":"));
+  }
 
-    // OCSP Status Request
-    case 5:
-      curl.setOpt(CurlImpersonateOpt.CURLOPT_TLS_STATUS_REQUEST, enable ? 1 : 0);
-      break;
+  if (fingerprint.tls_extension_order) {
+    const extensionOrder = stripPaddingExtension(fingerprint.tls_extension_order);
+    if (!fingerprint.tls_permute_extensions) {
+      curl.setOpt(CurlOpt.TLS_EXTENSION_ORDER, extensionOrder);
+    }
+  }
 
-    // Signed Certificate Timestamps
-    case 18:
-      curl.setOpt(CurlImpersonateOpt.CURLOPT_TLS_SIGNED_CERT_TIMESTAMPS, enable ? 1 : 0);
-      break;
+  curl.setOpt(CurlOpt.SSL_ENABLE_ALPN, Number(fingerprint.tls_alpn));
+  curl.setOpt(CurlOpt.SSL_ENABLE_ALPS, Number(fingerprint.tls_alps));
+  curl.setOpt(CurlOpt.SSL_ENABLE_TICKET, Number(fingerprint.tls_session_ticket));
+  curl.setOpt(CurlOpt.TLS_GREASE, Number(fingerprint.tls_grease));
+  if (fingerprint.tls_use_new_alps_codepoint) {
+    curl.setOpt(CurlOpt.SSL_ENABLE_ALPS, 1);
+    curl.setOpt(CurlOpt.TLS_USE_NEW_ALPS_CODEPOINT, 1);
+  }
+  // Explicit extension orders are allowlists in BoringSSL, so enable these
+  // capabilities here and let the selected order suppress them.
+  curl.setOpt(CurlOpt.TLS_STATUS_REQUEST, 1);
+  curl.setOpt(CurlOpt.TLS_SIGNED_CERT_TIMESTAMPS, 1);
+  curl.setOpt(CurlOpt.TLS_KEY_SHARES_LIMIT, fingerprint.tls_key_shares_limit);
+  curl.setOpt(
+    CurlOpt.SSL_CERT_COMPRESSION,
+    fingerprint.tls_cert_compression.join(",")
+  );
 
-    // Session Ticket
-    case 35:
-      curl.setOpt(CurlImpersonateOpt.CURLOPT_SSL_ENABLE_TICKET, enable ? 1 : 0);
-      break;
+  if (fingerprint.tls_signature_hashes.length > 0) {
+    curl.setOpt(CurlOpt.SSL_SIG_HASH_ALGS, fingerprint.tls_signature_hashes.join(","));
+  }
+  if (fingerprint.tls_supported_groups.length > 0) {
+    curl.setOpt(
+      CurlOpt.SSL_EC_CURVES,
+      fingerprint.tls_supported_groups.map(normalizeSupportedGroup).join(":")
+    );
+  }
+  if (fingerprint.tls_delegated_credentials.length > 0) {
+    curl.setOpt(
+      CurlOpt.TLS_DELEGATED_CREDENTIALS,
+      fingerprint.tls_delegated_credentials.join(":")
+    );
+  }
+  curl.setOpt(
+    CurlOpt.SSL_PERMUTE_EXTENSIONS,
+    Number(fingerprint.tls_permute_extensions)
+  );
+  if (fingerprint.tls_record_size_limit !== null) {
+    curl.setOpt(CurlOpt.TLS_RECORD_SIZE_LIMIT, fingerprint.tls_record_size_limit);
+  }
+  if (fingerprint.tls_ech !== null) {
+    curl.setOpt(CurlOpt.ECH, fingerprint.tls_ech);
+  }
 
-    // Padding extension (21) - managed by SSL engine, ignore
-    case 21:
-      break;
+  if (fingerprint.http2_settings) {
+    curl.setOpt(CurlOpt.HTTP2_SETTINGS, fingerprint.http2_settings);
+  }
+  if (fingerprint.http2_window_update) {
+    curl.setOpt(CurlOpt.HTTP2_WINDOW_UPDATE, fingerprint.http2_window_update);
+  }
+  if (fingerprint.http2_pseudo_headers_order) {
+    curl.setOpt(
+      CurlOpt.HTTP2_PSEUDO_HEADERS_ORDER,
+      fingerprint.http2_pseudo_headers_order.replace(/,/g, "")
+    );
+  }
+  if (fingerprint.http2_stream_weight !== null) {
+    curl.setOpt(CurlOpt.STREAM_WEIGHT, fingerprint.http2_stream_weight);
+  }
+  if (fingerprint.http2_stream_exclusive !== null) {
+    curl.setOpt(CurlOpt.STREAM_EXCLUSIVE, fingerprint.http2_stream_exclusive);
+  }
+  if (fingerprint.http2_no_priority) {
+    curl.setOpt(CurlOpt.HTTP2_NO_PRIORITY, 1);
+  }
 
-    // Delegated credentials (34) and record size limit (28) - handled by extra_fp
-    case 34:
-    case 28:
-      break;
+  if (fingerprint.header_order) {
+    curl.setOpt(CurlOpt.HTTPHEADER_ORDER, fingerprint.header_order);
+  }
+  curl.setOpt(CurlOpt.SPLIT_COOKIES, Number(fingerprint.split_cookies));
+  if (fingerprint.form_boundary) {
+    curl.setOpt(CurlOpt.FORM_BOUNDARY, fingerprint.form_boundary);
+  }
 
-    default:
-      // Unknown or unsupported extension - silently ignore
-      break;
+  if (fingerprint.http3_settings) {
+    curl.setOpt(CurlOpt.HTTP3_SETTINGS, fingerprint.http3_settings);
+  }
+  if (fingerprint.http3_pseudo_headers_order) {
+    curl.setOpt(
+      CurlOpt.HTTP3_PSEUDO_HEADERS_ORDER,
+      fingerprint.http3_pseudo_headers_order.replace(/,/g, "")
+    );
+  }
+  if (fingerprint.http3_tls_extension_order) {
+    curl.setOpt(CurlOpt.HTTP3_TLS_EXTENSION_ORDER, fingerprint.http3_tls_extension_order);
+  }
+  if (fingerprint.http3_header_order) {
+    curl.setOpt(CurlOpt.HTTP3_HTTPHEADER_ORDER, fingerprint.http3_header_order);
+  }
+  if (fingerprint.http3_tls_supported_groups.length > 0) {
+    curl.setOpt(
+      CurlOpt.HTTP3_SSL_EC_CURVES,
+      fingerprint.http3_tls_supported_groups.map(normalizeSupportedGroup).join(":")
+    );
+  }
+  if (fingerprint.quic_transport_parameters) {
+    curl.setOpt(CurlOpt.QUIC_TRANSPORT_PARAMETERS, fingerprint.quic_transport_parameters);
+  }
+  if (defaultHeaders && Object.keys(fingerprint.http3_headers).length > 0) {
+    curl.setStringList(
+      CurlOpt.HTTP3_HTTPHEADER,
+      formatFingerprintHeaders(fingerprint.http3_headers)
+    );
+  }
+
+  if (fingerprint.ws_header_order) {
+    curl.setOpt(CurlOpt.WS_HTTPHEADER_ORDER, fingerprint.ws_header_order);
+  }
+  if (fingerprint.ws_disable_session_ticket) {
+    curl.setOpt(CurlOpt.WS_SSL_DISABLE_TICKET, 1);
+  }
+  if (fingerprint.ws_tls_cert_compression !== null) {
+    curl.setOpt(
+      CurlOpt.WS_SSL_CERT_COMPRESSION,
+      fingerprint.ws_tls_cert_compression.join(",")
+    );
+  }
+  if (defaultHeaders && Object.keys(fingerprint.ws_headers).length > 0) {
+    curl.setStringList(CurlOpt.WS_HTTPHEADER, formatFingerprintHeaders(fingerprint.ws_headers));
   }
 }

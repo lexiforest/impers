@@ -157,6 +157,74 @@ export async function startMockServer(port = 0): Promise<number> {
     };
   });
 
+  // Fingerprint API endpoint - mimics impersonate.pro pagination
+  server.get("/fingerprints", async (request) => {
+    const query = request.query as { skip?: string; limit?: string };
+    const skip = parseInt(query.skip || "0", 10);
+    const limit = parseInt(query.limit || "100", 10);
+    const items = [
+      {
+        name: "edge_146_macos_26",
+        data: {
+          client: "edge",
+          client_version: "146",
+          os: "macos",
+          os_version: "26",
+          http_version: "v2",
+        },
+      },
+      {
+        target: "chrome_147_windows_10",
+        fingerprint: JSON.stringify({
+          client: "chrome",
+          client_version: "147",
+          os: "windows",
+          os_version: "10",
+          http_version: "v3",
+        }),
+      },
+    ];
+
+    const pageItems = items.slice(skip, skip + limit);
+    return {
+      authorization: request.headers.authorization || null,
+      items: pageItems,
+      pagination: {
+        has_more: skip + limit < items.length,
+        next_skip: skip + limit,
+      },
+    };
+  });
+
+  server.get("/paginated/fingerprints", async (request) => {
+    const query = request.query as { skip?: string; limit?: string };
+    const skip = parseInt(query.skip || "0", 10);
+    const limit = parseInt(query.limit || "100", 10);
+    const total = 102;
+    const end = Math.min(skip + limit, total);
+    const items = Array.from({ length: end - skip }, (_, index) => {
+      const item = skip + index;
+      return {
+        name: `testing${item}`,
+        fingerprint: {
+          client: "testing",
+          client_version: String(item),
+        },
+      };
+    });
+
+    return {
+      data: items,
+      pagination: {
+        skip,
+        limit,
+        total,
+        has_more: end < total,
+        next_skip: end < total ? end : null,
+      },
+    };
+  });
+
   // Status endpoint - returns specific status code
   server.get<{ Params: { code: string } }>("/status/:code", async (request, reply) => {
     const code = parseInt(request.params.code, 10);

@@ -1,10 +1,13 @@
 {
   "name": "impers",
-  "version": "0.0.9",
+  "version": "0.1.0",
   "description": "Nodejs binding for libcurl, with impersonation support.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "impers": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -21,6 +24,7 @@
     "lint": "eslint .",
     "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
     "test:ci": "mkdir -p reports && IMPERS_DEBUG_TESTS=1 NODE_OPTIONS='--experimental-vm-modules --enable-source-maps --trace-uncaught --trace-warnings --report-on-fatalerror --report-on-signal --report-signal=SIGSEGV --report-uncaught-exception --report-directory=reports' jest --maxWorkers=4 --verbose",
+    "test:live": "NODE_OPTIONS='--experimental-vm-modules' jest tests/live-fingerprints.test.ts --runInBand",
     "test:watch": "NODE_OPTIONS='--experimental-vm-modules' jest --watch",
     "docs:dev": "npm --prefix docs install && npm --prefix docs run start",
     "docs:build": "npm --prefix docs install && npm --prefix docs run build"

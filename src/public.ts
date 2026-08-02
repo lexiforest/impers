@@ -148,6 +148,10 @@ export async function patch(url: string, options?: RequestOptions): Promise<Resp
   return request("PATCH", url, options);
 }
 
+// Fetch API compatible interface
+export { fetch } from "./http/fetch.js";
+export type { ImpersRequestInit } from "./http/fetch.js";
+
 // Re-exports for convenience
 export { Session } from "./http/session.js";
 export { Response } from "./http/response.js";
@@ -158,6 +162,16 @@ export { Curl } from "./core/easy.js";
 export { CurlMime } from "./core/mime.js";
 export { CurlMulti, getSharedMulti, closeSharedMulti } from "./core/multi.js";
 export { CurlOpt, CurlInfo, CurlCode, CurlHttpVersion, CurlWsFlag, CurlImpersonateOpt, CurlSslVersion } from "./ffi/constants.js";
+export {
+  Fingerprint,
+  FingerprintManager,
+  FingerprintUpdateError,
+  getFingerprint,
+  NATIVE_IMPERSONATE_TARGETS,
+  DEFAULT_API_ROOT,
+  type NativeFingerprintTarget,
+  type FingerprintRow,
+} from "./fingerprints.js";
 
 // Fingerprinting utilities
 export {

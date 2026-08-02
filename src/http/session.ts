@@ -12,13 +12,20 @@ import { SList } from "../core/slist.js";
 import { CurlMime } from "../core/mime.js";
 import {
   AbortError,
+  ImpersonateError,
   SessionClosed,
 } from "../utils/errors.js";
 import {
+  applyFingerprintOptions,
   setJa3Options,
   setAkamaiOptions,
   setExtraFingerprintOptions,
 } from "../utils/fingerprint.js";
+import {
+  Fingerprint,
+  FingerprintManager,
+  resolveNativeImpersonateTarget,
+} from "../fingerprints.js";
 import {
   brotliDecompressSync,
   gunzipSync,
@@ -136,8 +143,10 @@ export class Session {
       // Set method
       this.setMethod(curl, method.toUpperCase());
 
+      const fingerprint = this.resolveFingerprint(mergedOptions.impersonate);
+
       // Set headers
-      const headerList = this.buildHeaders(mergedOptions);
+      const headerList = this.buildHeaders(mergedOptions, fingerprint);
       if (headerList.length > 0) {
         const slist = new SList();
         headerList.forEach((h) => slist.append(h));
@@ -182,7 +191,7 @@ export class Session {
       this.setDnsOptions(curl, mergedOptions);
 
       // Set impersonation
-      this.setImpersonation(curl, mergedOptions);
+      this.setImpersonation(curl, mergedOptions, fingerprint);
 
       // Set raw curl options
       if (mergedOptions.curlOptions) {
@@ -535,8 +544,17 @@ export class Session {
   /**
    * Build headers list for curl
    */
-  private buildHeaders(options: RequestOptions): string[] {
+  private buildHeaders(options: RequestOptions, fingerprint: Fingerprint | null): string[] {
     const headers = new Headers();
+
+    if (fingerprint && options.defaultHeaders !== false) {
+      for (const [name, value] of Object.entries(fingerprint.headers)) {
+        if (name.toLowerCase() === "host" && value === "") {
+          continue;
+        }
+        headers.set(name, value);
+      }
+    }
 
     // Add session headers first
     for (const [name, value] of this._headers) {
@@ -919,14 +937,25 @@ export class Session {
   /**
    * Set browser impersonation and fingerprinting options
    */
-  private setImpersonation(curl: Curl, options: RequestOptions): void {
-    // First, try to apply browser impersonation if specified
-    if (options.impersonate) {
+  private setImpersonation(
+    curl: Curl,
+    options: RequestOptions,
+    fingerprint: Fingerprint | null
+  ): void {
+    if (fingerprint) {
+      applyFingerprintOptions(curl, fingerprint, options.defaultHeaders !== false);
+    } else if (typeof options.impersonate === "string") {
+      const target = resolveNativeImpersonateTarget(options.impersonate);
+      if (!target) {
+        throw new ImpersonateError(`Impersonating ${options.impersonate} is not supported`);
+      }
       try {
-        curl.impersonate(options.impersonate, options.defaultHeaders !== false);
-      } catch {
-        // Impersonation not available (using standard libcurl)
-        // Fall through to manual fingerprinting if ja3/akamai provided
+        curl.impersonate(target, options.defaultHeaders !== false);
+      } catch (error) {
+        throw new ImpersonateError(
+          `Impersonating ${target} is not supported`,
+          error instanceof Error ? error : undefined
+        );
       }
     }
 
@@ -945,6 +974,26 @@ export class Session {
     // Note: If impersonate was already applied, Akamai will override HTTP/2 settings
     if (options.akamai) {
       setAkamaiOptions(curl, options.akamai);
+    }
+  }
+
+  private resolveFingerprint(impersonate: RequestOptions["impersonate"]): Fingerprint | null {
+    if (!impersonate) {
+      return null;
+    }
+    if (impersonate instanceof Fingerprint) {
+      return impersonate;
+    }
+    if (resolveNativeImpersonateTarget(impersonate)) {
+      return null;
+    }
+    try {
+      return FingerprintManager.getFingerprint(impersonate);
+    } catch (error) {
+      throw new ImpersonateError(
+        `Impersonating ${impersonate} is not supported`,
+        error instanceof Error ? error : undefined
+      );
     }
   }
 }
