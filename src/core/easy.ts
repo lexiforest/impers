@@ -30,6 +30,11 @@ import {
 } from "../utils/callbacks.js";
 import { SList } from "./slist.js";
 import type { ExtraFingerprint } from "../types/options.js";
+import {
+  setAkamaiOptions,
+  setExtraFingerprintOptions,
+  setJa3Options,
+} from "../utils/fingerprint.js";
 
 // Info type masks for determining which getinfo variant to use
 const CURLINFO_TYPEMASK = 0xf00000;
@@ -280,17 +285,27 @@ export class Curl {
   }
 
   /**
+   * Set a curl_slist option from an array of strings.
+   */
+  setStringList(option: number, values: string[]): void {
+    if (!values || !values.length) {
+      return;
+    }
+
+    const list = new SList();
+    values.forEach((value) => list.append(value));
+    this._slists.push(list);
+    this.setOpt(option, list.pointer);
+  }
+
+  /**
    * Set HTTP headers from array of "Header: Value" strings
    */
   setHeaders(headers: string[]): void {
     if (!headers || !headers.length) {
       return;
     }
-
-    const list = new SList();
-    headers.forEach((header) => list.append(header));
-    this._slists.push(list);
-    this.setOpt(CurlOpt.HTTPHEADER, list.pointer);
+    this.setStringList(CurlOpt.HTTPHEADER, headers);
   }
 
   /**
@@ -374,8 +389,6 @@ export class Curl {
    * @param permute - If true, don't enforce extension order (allows random permutation)
    */
   setJa3(ja3: string, permute: boolean = false): void {
-    // Lazy import to avoid circular dependency
-    const { setJa3Options } = require("../utils/fingerprint.js");
     setJa3Options(this, ja3, permute);
   }
 
@@ -390,8 +403,6 @@ export class Curl {
    * @param akamai - Akamai fingerprint string
    */
   setAkamai(akamai: string): void {
-    // Lazy import to avoid circular dependency
-    const { setAkamaiOptions } = require("../utils/fingerprint.js");
     setAkamaiOptions(this, akamai);
   }
 
@@ -403,8 +414,6 @@ export class Curl {
    * @param options - Extra fingerprint configuration
    */
   setExtraFingerprint(options: ExtraFingerprint): void {
-    // Lazy import to avoid circular dependency
-    const { setExtraFingerprintOptions } = require("../utils/fingerprint.js");
     setExtraFingerprintOptions(this, options);
   }
 

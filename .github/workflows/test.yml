@@ -1,6 +1,7 @@
 name: Test on Ubuntu
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - "**"
@@ -33,3 +34,32 @@ jobs:
           name: node-diagnostic-reports
           path: reports/
           if-no-files-found: ignore
+
+  live-fingerprints:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.actor != 'dependabot[bot]')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Verify live fingerprint API secret
+        env:
+          IMPERSONATE_API_KEY: ${{ secrets.IMPERSONATE_API_KEY }}
+        run: |
+          if [ -z "$IMPERSONATE_API_KEY" ]; then
+            echo "::error::Repository secret IMPERSONATE_API_KEY is not configured"
+            exit 1
+          fi
+      - run: npm run test:live
+        env:
+          IMPERSONATE_API_KEY: ${{ secrets.IMPERSONATE_API_KEY }}

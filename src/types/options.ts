@@ -4,6 +4,7 @@
 
 import type { HeadersInit } from "../http/headers.js";
 import type { CookiesInit } from "../http/cookies.js";
+import type { Fingerprint } from "../fingerprints.js";
 
 /**
  * Authentication types
@@ -143,8 +144,8 @@ export interface RequestOptions {
   cert?: string | CertConfig;
 
   // Browser impersonation
-  /** Browser to impersonate (e.g., "chrome124", "firefox120") */
-  impersonate?: string;
+  /** Builtin/cached target name or an editable Fingerprint object */
+  impersonate?: string | Fingerprint;
   /** JA3 fingerprint string */
   ja3?: string;
   /** Akamai HTTP/2 fingerprint */
