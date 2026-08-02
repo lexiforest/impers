@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Curl } from "../src/core/easy.js";
-import { CurlOpt } from "../src/ffi/constants.js";
+import { CurlHttpVersion, CurlOpt } from "../src/ffi/constants.js";
 import {
   Fingerprint,
   FingerprintManager,
@@ -39,6 +39,26 @@ describe("Fingerprint", () => {
     expect(fingerprint.tls_key_shares_limit).toBe(2);
     expect(fingerprint.http3_headers).toEqual({});
     expect(fingerprint.ws_tls_cert_compression).toBeNull();
+  });
+
+  it("does not select the request HTTP version from fingerprint metadata", () => {
+    const curl = new FakeCurl();
+    const fingerprint = new Fingerprint({ http_version: "v2" });
+
+    applyFingerprintOptions(curl as unknown as Curl, fingerprint, false);
+
+    expect(curl.options.has(CurlOpt.HTTP_VERSION)).toBe(false);
+  });
+
+  it("does not override an explicitly selected request HTTP version", () => {
+    const curl = new FakeCurl();
+    const fingerprint = new Fingerprint({ http_version: "v2" });
+    curl.setOpt(CurlOpt.HTTP_VERSION, CurlHttpVersion.CURL_HTTP_VERSION_3);
+
+    applyFingerprintOptions(curl as unknown as Curl, fingerprint, false);
+
+    expect(curl.options.get(CurlOpt.HTTP_VERSION))
+      .toBe(CurlHttpVersion.CURL_HTTP_VERSION_3);
   });
 
   it("loads current HTTP/3 and WebSocket fields and returns an editable copy", () => {

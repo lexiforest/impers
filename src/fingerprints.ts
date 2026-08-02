@@ -11,6 +11,8 @@ export class Fingerprint {
   os: string = "";
   os_version: string = "";
 
+  // Describes the default HTTP version associated with this fingerprint. The
+  // version used for a request is selected separately with `httpVersion`.
   http_version: string = "v2";
 
   tls_version: string = "1.2";

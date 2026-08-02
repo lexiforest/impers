@@ -312,22 +312,6 @@ function isGrease(value: number): boolean {
   return high === low && (high & 0x0f) === 0x0a;
 }
 
-function normalizeFingerprintHttpVersion(version: string): number {
-  const versions: Record<string, number> = {
-    v1: CurlHttpVersion.CURL_HTTP_VERSION_1_1,
-    v2: CurlHttpVersion.CURL_HTTP_VERSION_2_0,
-    v2tls: CurlHttpVersion.CURL_HTTP_VERSION_2TLS,
-    v2_prior_knowledge: CurlHttpVersion.CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE,
-    v3: CurlHttpVersion.CURL_HTTP_VERSION_3,
-    v3only: CurlHttpVersion.CURL_HTTP_VERSION_3ONLY,
-  };
-  const normalized = versions[version.trim().toLowerCase()];
-  if (normalized === undefined) {
-    throw new FingerprintError(`Unsupported HTTP version: ${version}`);
-  }
-  return normalized;
-}
-
 function normalizeFingerprintTlsVersion(version: string): number {
   const versions: Record<string, number> = {
     "1": CurlSslVersion.CURL_SSLVERSION_TLSv1,
@@ -369,10 +353,6 @@ export function applyFingerprintOptions(
   fingerprint: Fingerprint,
   defaultHeaders: boolean = true
 ): void {
-  if (fingerprint.http_version) {
-    curl.setOpt(CurlOpt.HTTP_VERSION, normalizeFingerprintHttpVersion(fingerprint.http_version));
-  }
-
   if (fingerprint.tls_version) {
     const tlsVersion = normalizeFingerprintTlsVersion(fingerprint.tls_version);
     curl.setOpt(
