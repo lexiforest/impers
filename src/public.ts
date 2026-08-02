@@ -148,6 +148,10 @@ export async function patch(url: string, options?: RequestOptions): Promise<Resp
   return request("PATCH", url, options);
 }
 
+// Fetch API compatible interface
+export { fetch } from "./http/fetch.js";
+export type { ImpersRequestInit } from "./http/fetch.js";
+
 // Re-exports for convenience
 export { Session } from "./http/session.js";
 export { Response } from "./http/response.js";
