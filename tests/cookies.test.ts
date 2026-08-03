@@ -239,4 +239,50 @@ describe("Cookies", () => {
       expect(output).not.toMatch(/\t\.example\.com\t/);
     });
   });
+
+  describe("domainSpecified", () => {
+    it("should set domainSpecified to false in parseSetCookie() when no Domain attribute is present", () => {
+      const cookie = Cookies.parseSetCookie(
+        "session=abc123; Path=/",
+        new URL("https://example.com/")
+      );
+      expect(cookie.domainSpecified).toBe(false);
+    });
+
+    it("should set domainSpecified to true in parseSetCookie() when an explicit Domain attribute is present", () => {
+      const cookie = Cookies.parseSetCookie("user=john; Domain=example.com");
+      expect(cookie.domainSpecified).toBe(true);
+    });
+
+    it("should not send a host-only cookie to a subdomain via getForUrl()", () => {
+      const cookies = new Cookies();
+      cookies.set("session", "abc123", { domain: "example.com", domainSpecified: false });
+
+      const forSubdomain = cookies.getForUrl("https://sub.example.com/");
+      expect(forSubdomain.map((c) => c.name)).not.toContain("session");
+    });
+
+    it("should still send a Domain=-scoped cookie to a subdomain via getForUrl()", () => {
+      const cookies = new Cookies();
+      const parsed = Cookies.parseSetCookie("token=xyz; Domain=example.com");
+      cookies.set(parsed.name, parsed.value, parsed);
+
+      const forSubdomain = cookies.getForUrl("https://sub.example.com/");
+      expect(forSubdomain.map((c) => c.name)).toContain("token");
+    });
+
+    it("should preserve domainSpecified for both host-only and Domain=-scoped cookies on clone()", () => {
+      const cookies = new Cookies();
+      cookies.set("hostOnly", "value1", { domain: "example.com", domainSpecified: false });
+      cookies.set("domainScoped", "value2", { domain: "example.com", domainSpecified: true });
+
+      const cloned = cookies.clone();
+
+      const hostOnlyCookie = cloned.getCookie("hostOnly");
+      const domainScopedCookie = cloned.getCookie("domainScoped");
+
+      expect(hostOnlyCookie?.domainSpecified).toBe(false);
+      expect(domainScopedCookie?.domainSpecified).toBe(true);
+    });
+  });
 });
