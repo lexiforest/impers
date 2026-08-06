@@ -495,8 +495,27 @@ export class AsyncWebSocket {
   }
 
   /**
-   * Send pong frame (usually auto-sent in response to ping)
+   * Send a pong frame.
+   *
+   * Public because an unsolicited pong is the standard unidirectional heartbeat
+   * (RFC 6455 section 5.5.3), and because on this transport it is the only way to keep an
+   * otherwise idle connection alive. libcurl answers a server ping by *queueing* a pong,
+   * and in CONNECT_ONLY mode nothing is written to the socket until the application sends
+   * something — so a consumer that only ever receives never actually delivers a pong, and
+   * a server that enforces a pong deadline closes the connection. Any send flushes the
+   * queued pong; a pong is the quietest one, since it asks for no reply.
    */
+  async pong(data?: Buffer | string): Promise<void> {
+    const buffer =
+      data === undefined
+        ? Buffer.alloc(0)
+        : Buffer.isBuffer(data)
+          ? data
+          : Buffer.from(data, "utf-8");
+    await this.sendRaw(buffer, CurlWsFlag.CURLWS_PONG);
+  }
+
+  /** Answer a received ping. Kept separate so the auto-reply path reads as what it is. */
   private async sendPong(data: Buffer): Promise<void> {
     await this.sendRaw(data, CurlWsFlag.CURLWS_PONG);
   }
