@@ -18,7 +18,7 @@ import {
   type CurlHandle,
   type CurlMultiHandle,
 } from "../ffi/libcurl.js";
-import { CurlOpt, CurlCode, CurlWsFlag } from "../ffi/constants.js";
+import { CurlOpt, CurlCode, CurlWsFlag, CurlWsOpt } from "../ffi/constants.js";
 import { WebSocketError, WebSocketClosed, ImpersonateError } from "../utils/errors.js";
 import { Headers } from "../http/headers.js";
 import { Cookies } from "../http/cookies.js";
@@ -101,6 +101,18 @@ export class AsyncWebSocket {
 
     // Enable WebSocket upgrade
     this.curl.setOpt(CurlOpt.CONNECT_ONLY, 2); // 2 = WebSocket mode
+
+    // Answer pings here rather than letting libcurl do it.
+    //
+    // libcurl's automatic pong is queued and only written on the next application send;
+    // receiving does not flush it. A consumer that only reads — the normal shape for a
+    // subscription — therefore never delivers a pong at all, and a server that enforces a
+    // pong deadline closes the connection with no error until the next receive.
+    //
+    // With CURLWS_NOAUTOPONG the ping is delivered to `curl_ws_recv` instead, and the reply
+    // goes out from `tryReceive` as an ordinary send: immediately, echoing the ping's
+    // payload, which is what RFC 6455 asks for and what a browser does.
+    this.curl.setOpt(CurlOpt.WS_OPTIONS, CurlWsOpt.CURLWS_NOAUTOPONG);
 
     // Impersonation first: it configures the TLS and HTTP/2 layers, and — unless default
     // headers are turned off — installs the browser's own header list, which would replace
@@ -285,9 +297,12 @@ export class AsyncWebSocket {
           );
         }
 
-        // Handle ping - auto respond with pong
+        // Answer a ping and keep reading. It is deliberately not returned: libcurl used to
+        // absorb pings entirely, so surfacing them now would put frames into a stream that
+        // has never carried them.
         if (message.type === WebSocketMessageType.PING) {
           this.sendPong(message.data).catch(() => {});
+          return this.tryReceive();
         }
 
         return message;

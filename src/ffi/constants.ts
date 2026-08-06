@@ -735,6 +735,7 @@ export type CurlWsFlag = (typeof CurlWsFlag)[keyof typeof CurlWsFlag];
  */
 export const CurlWsOpt = {
   CURLWS_RAW_MODE: 1 << 0,
+  CURLWS_NOAUTOPONG: 1 << 1,
 } as const;
 
 export type CurlWsOpt = (typeof CurlWsOpt)[keyof typeof CurlWsOpt];
