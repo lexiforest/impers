@@ -352,8 +352,13 @@ function curl_multi_setopt_off_t(
 // ============================================================================
 
 // curl_ws_recv(CURL *curl, void *buffer, size_t buflen, size_t *recv, const struct curl_ws_frame **meta)
+//
+// `meta` must be marked `_Out_`. Without it Koffi treats the array it is given as an input
+// buffer, marshals a copy, and never writes the returned pointer back — so the frame
+// metadata is always null and every frame looks like TEXT, including PING, PONG, BINARY and
+// CLOSE.
 const curl_ws_recv_fn = lib.func(
-  "int curl_ws_recv(void *, void *, size_t, size_t *, void **)"
+  "int curl_ws_recv(void *, void *, size_t, size_t *, _Out_ void **)"
 );
 
 interface WsFrame {
