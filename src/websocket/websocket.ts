@@ -280,7 +280,12 @@ export class AsyncWebSocket {
 
     const { code, received, frame } = curl_ws_recv(this.handle, this.receiveBuffer);
 
-    if (code === CurlCode.CURLE_OK && received > 0) {
+    // `received > 0` alone would discard every zero-length frame. An empty payload is
+    // perfectly ordinary — it is what a keepalive ping, a bare close, and an empty text
+    // message all look like — and dropping it means never answering a ping that carries no
+    // payload, which is the common case. What distinguishes "nothing to read" from "a frame
+    // with no payload" is the frame metadata, not the byte count.
+    if (code === CurlCode.CURLE_OK && (received > 0 || frame !== null)) {
       // Process the received frame
       const data = Buffer.from(this.receiveBuffer.subarray(0, received));
       // Default to TEXT if no frame info available

@@ -32,6 +32,7 @@ let server: Server;
 let port: number;
 const upgraded: Array<{ destroy(): void }> = [];
 let received: ClientFrame[] = [];
+let pingPayload = "are-you-there";
 
 /** Client frames are masked; unmask the payload so it can be compared. */
 function readClientFrame(chunk: Buffer): ClientFrame {
@@ -54,7 +55,7 @@ beforeAll(async () => {
         `Sec-WebSocket-Accept: ${accept}\r\n\r\n`
     );
     socket.on("data", (chunk: Buffer) => received.push(readClientFrame(chunk)));
-    socket.write(frame(OPCODE_PING, Buffer.from("are-you-there")));
+    socket.write(frame(OPCODE_PING, Buffer.from(pingPayload)));
     socket.write(frame(0x1, Buffer.from("payload")));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -72,6 +73,7 @@ beforeEach(() => {
 
 describe("server ping", () => {
   it("is answered with a pong echoing its payload, while only reading", async () => {
+    pingPayload = "are-you-there";
     const ws = await wsConnect(`ws://127.0.0.1:${port}/`);
 
     const message = await ws.recv(5);
@@ -84,6 +86,22 @@ describe("server ping", () => {
     const pong = received.find((entry) => entry.opcode === OPCODE_PONG);
     expect(pong).toBeDefined();
     expect(pong?.payload).toBe("are-you-there");
+
+    await ws.close();
+  });
+
+  it("is answered even with no payload, which is the common case", async () => {
+    // A zero-length frame used to be discarded outright — `tryReceive` required
+    // `received > 0`, which cannot distinguish "no data" from "a frame carrying none". An
+    // empty ping is what most servers send, so in practice nothing was ever answered.
+    pingPayload = "";
+    const ws = await wsConnect(`ws://127.0.0.1:${port}/`);
+
+    const message = await ws.recv(5);
+    expect(message.data.toString("utf-8")).toBe("payload");
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(received.some((entry) => entry.opcode === OPCODE_PONG)).toBe(true);
 
     await ws.close();
   });
