@@ -19,8 +19,10 @@ import {
   type CurlMultiHandle,
 } from "../ffi/libcurl.js";
 import { CurlOpt, CurlCode, CurlWsFlag } from "../ffi/constants.js";
-import { WebSocketError, WebSocketClosed } from "../utils/errors.js";
+import { WebSocketError, WebSocketClosed, ImpersonateError } from "../utils/errors.js";
 import { Headers } from "../http/headers.js";
+import { Cookies } from "../http/cookies.js";
+import { resolveNativeImpersonateTarget } from "../fingerprints.js";
 import type { WebSocketOptions } from "../types/options.js";
 
 /** How long to wait between `curl_multi_perform` calls while the handshake is in progress. */
@@ -100,12 +102,44 @@ export class AsyncWebSocket {
     // Enable WebSocket upgrade
     this.curl.setOpt(CurlOpt.CONNECT_ONLY, 2); // 2 = WebSocket mode
 
+    // Impersonation first: it configures the TLS and HTTP/2 layers, and — unless default
+    // headers are turned off — installs the browser's own header list, which would replace
+    // anything set before it. The caller's headers go on afterwards so they win.
+    if (typeof options.impersonate === "string") {
+      const target = resolveNativeImpersonateTarget(options.impersonate);
+      if (!target) {
+        throw new ImpersonateError(`Impersonating ${options.impersonate} is not supported`);
+      }
+      try {
+        this.curl.impersonate(target, options.defaultHeaders !== false);
+      } catch (error) {
+        throw new ImpersonateError(
+          `Impersonating ${target} is not supported`,
+          error instanceof Error ? error : undefined
+        );
+      }
+    }
+
     // Set headers
     if (options.headers) {
-      const headers = new Headers(options.headers);
-      const headerList = headers.toCurlHeaders();
-      // Note: Would need SList here for actual implementation
+      this.curl.setHeaders(new Headers(options.headers).toCurlHeaders());
     }
+
+    // Set cookies
+    if (options.cookies) {
+      const cookieHeader = new Cookies(options.cookies).toCookieHeader();
+      if (cookieHeader) {
+        this.curl.setOpt(CurlOpt.COOKIE, cookieHeader);
+      }
+    }
+
+    // Set proxy
+    if (options.proxy) {
+      this.curl.setOpt(CurlOpt.PROXY, options.proxy);
+    }
+
+    // Set SSL verification
+    this.curl.setOpt(CurlOpt.SSL_VERIFYPEER, options.verify === false ? 0 : 1);
 
     // Set timeout
     if (options.timeout) {
