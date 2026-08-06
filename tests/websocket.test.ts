@@ -5,7 +5,7 @@ import { AsyncWebSocket, wsConnect } from "../src/websocket/websocket.js";
 import { WebSocketError, WebSocketClosed } from "../src/utils/errors.js";
 import { getWebSocketUrl } from "./mock-server.js";
 
-describe.skip("AsyncWebSocket", () => {
+describe("AsyncWebSocket", () => {
   let wsUrl: string;
 
   beforeAll(() => {

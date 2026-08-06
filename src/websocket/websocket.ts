@@ -7,15 +7,29 @@
 
 import { Curl } from "../core/easy.js";
 import {
-  curl_easy_perform_async,
+  curl_multi_init,
+  curl_multi_add_handle,
+  curl_multi_remove_handle,
+  curl_multi_perform,
+  curl_multi_cleanup,
+  curl_multi_info_read,
   curl_ws_recv,
   curl_ws_send,
   type CurlHandle,
+  type CurlMultiHandle,
 } from "../ffi/libcurl.js";
 import { CurlOpt, CurlCode, CurlWsFlag } from "../ffi/constants.js";
-import { WebSocketError, WebSocketClosed } from "../utils/errors.js";
+import { WebSocketError, WebSocketClosed, ImpersonateError } from "../utils/errors.js";
 import { Headers } from "../http/headers.js";
+import { Cookies } from "../http/cookies.js";
+import { resolveNativeImpersonateTarget } from "../fingerprints.js";
 import type { WebSocketOptions } from "../types/options.js";
+
+/** How long to wait between `curl_multi_perform` calls while the handshake is in progress. */
+const CONNECT_POLL_MS = 1;
+
+/** `CURLMSG_DONE` — the only message type curl's multi interface defines. */
+const CURLMSG_DONE = 1;
 
 /**
  * WebSocket message types
@@ -63,6 +77,7 @@ export class AsyncWebSocket {
   private receiveBuffer: Buffer;
   private messageQueue: WebSocketMessage[] = [];
 
+  private multi: CurlMultiHandle | null = null;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private pollInterval: number = 10; // ms between polls
 
@@ -87,12 +102,44 @@ export class AsyncWebSocket {
     // Enable WebSocket upgrade
     this.curl.setOpt(CurlOpt.CONNECT_ONLY, 2); // 2 = WebSocket mode
 
+    // Impersonation first: it configures the TLS and HTTP/2 layers, and — unless default
+    // headers are turned off — installs the browser's own header list, which would replace
+    // anything set before it. The caller's headers go on afterwards so they win.
+    if (typeof options.impersonate === "string") {
+      const target = resolveNativeImpersonateTarget(options.impersonate);
+      if (!target) {
+        throw new ImpersonateError(`Impersonating ${options.impersonate} is not supported`);
+      }
+      try {
+        this.curl.impersonate(target, options.defaultHeaders !== false);
+      } catch (error) {
+        throw new ImpersonateError(
+          `Impersonating ${target} is not supported`,
+          error instanceof Error ? error : undefined
+        );
+      }
+    }
+
     // Set headers
     if (options.headers) {
-      const headers = new Headers(options.headers);
-      const headerList = headers.toCurlHeaders();
-      // Note: Would need SList here for actual implementation
+      this.curl.setHeaders(new Headers(options.headers).toCurlHeaders());
     }
+
+    // Set cookies
+    if (options.cookies) {
+      const cookieHeader = new Cookies(options.cookies).toCookieHeader();
+      if (cookieHeader) {
+        this.curl.setOpt(CurlOpt.COOKIE, cookieHeader);
+      }
+    }
+
+    // Set proxy
+    if (options.proxy) {
+      this.curl.setOpt(CurlOpt.PROXY, options.proxy);
+    }
+
+    // Set SSL verification
+    this.curl.setOpt(CurlOpt.SSL_VERIFYPEER, options.verify === false ? 0 : 1);
 
     // Set timeout
     if (options.timeout) {
@@ -110,22 +157,75 @@ export class AsyncWebSocket {
   }
 
   /**
-   * Perform the WebSocket connection handshake using Koffi's async
-   * worker thread to avoid blocking the Node.js event loop.
+   * Perform the WebSocket connection handshake, on the main thread and without blocking it.
+   *
+   * It is driven with the multi interface rather than `curl_easy_perform`, for two reasons
+   * that pull in opposite directions and are both satisfied here.
+   *
+   * It must not run on a libuv worker thread. That is what Koffi's `.async()` does, and
+   * driving libcurl from one leaves per-thread state behind whose pthread TSD destructor
+   * lives in the libcurl image. At process exit the worker thread is torn down and
+   * `_pthread_tsd_cleanup` calls that destructor after the image has gone, so the process
+   * dies with SIGSEGV *after* the script has finished — silently, since the script produced
+   * all of its output first. It is not specific to WebSockets: any `curl_easy_perform`
+   * issued through `.async()` does it, a plain HTTPS GET included.
+   *
+   * It must also not block the event loop, or a caller talking to a server in its own
+   * process — which is exactly what this repository's tests do — would deadlock.
+   *
+   * `curl_multi_perform` gives both: it returns as soon as there is nothing to do right
+   * now, so the handshake advances across event-loop turns without ever leaving the main
+   * thread. The handle stays attached to the multi for the life of the socket; removing it
+   * would drop the connection that `CONNECT_ONLY` exists to keep.
    */
   private async performConnect(): Promise<void> {
     try {
-      const code = await curl_easy_perform_async(this.handle);
+      this.multi = curl_multi_init();
+      if (!this.multi) throw new WebSocketError("Failed to initialize curl multi handle");
+      curl_multi_add_handle(this.multi, this.handle);
+
+      let running = 1;
+      while (running > 0) {
+        const perform = curl_multi_perform(this.multi);
+        if (perform.code !== 0) {
+          throw new WebSocketError(`WS connect failed with multi code ${perform.code}`);
+        }
+        running = perform.runningHandles;
+        if (running > 0) await new Promise((resolve) => setTimeout(resolve, CONNECT_POLL_MS));
+      }
+
+      const code = this.readTransferResult();
       if (code !== CurlCode.CURLE_OK) {
         throw new WebSocketError(`WS connect failed with code ${code}`);
       }
       this._connected = true;
     } catch (error) {
       this._closed = true;
+      this.releaseMulti();
       this.curl.cleanup();
       if (error instanceof WebSocketError) throw error;
       throw new WebSocketError(`Failed to connect: ${error}`);
     }
+  }
+
+  /** The completion code the multi recorded for this transfer, once it stopped running. */
+  private readTransferResult(): number {
+    if (!this.multi) return CurlCode.CURLE_OK;
+    for (;;) {
+      const { message } = curl_multi_info_read(this.multi);
+      if (!message) return CurlCode.CURLE_OK;
+      // CURLMSG_DONE is the only message curl defines, and it carries the easy result.
+      if (message.msg === CURLMSG_DONE) return message.result;
+    }
+  }
+
+  /** Detach and free the multi handle. Safe to call more than once. */
+  private releaseMulti(): void {
+    if (!this.multi) return;
+    const multi = this.multi;
+    this.multi = null;
+    curl_multi_remove_handle(multi, this.handle);
+    curl_multi_cleanup(multi);
   }
 
   /**
@@ -430,6 +530,7 @@ export class AsyncWebSocket {
     }
 
     // Cleanup
+    this.releaseMulti();
     this.curl.cleanup();
   }
 
