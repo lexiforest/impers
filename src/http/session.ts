@@ -564,8 +564,19 @@ export class Session {
     // Add request headers (override session headers)
     if (options.headers) {
       const reqHeaders = new Headers(options.headers);
+      // The first value for a name replaces the session's, the rest are appended to it.
+      // Calling set() for every entry would leave a header given several values -- which
+      // HeadersInit accepts, as Record<string, string[]> or as repeated pairs -- holding
+      // only its last one. Replacing rather than deleting keeps the header's position.
+      const replaced = new Set<string>();
       for (const [name, value] of reqHeaders) {
-        headers.set(name, value);
+        const key = name.toLowerCase();
+        if (replaced.has(key)) {
+          headers.append(name, value);
+        } else {
+          headers.set(name, value);
+          replaced.add(key);
+        }
       }
     }
 
