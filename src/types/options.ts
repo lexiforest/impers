@@ -79,6 +79,18 @@ export interface ExtraFingerprint {
  * Request options - passed to individual requests
  */
 export interface RequestOptions {
+  /**
+   * Headers libcurl would otherwise add on its own, to suppress.
+   *
+   * libcurl invents a few headers when it thinks they are needed — most visibly
+   * `Content-Type: application/x-www-form-urlencoded` on any POST that carries fields, even
+   * an empty one. curl itself expresses removal as a header line of `Name:` with nothing
+   * after the colon, which `headers` cannot produce: an empty value there means "send this
+   * header empty" (`Name;`), which is a different request.
+   *
+   * Names are matched by libcurl case-insensitively.
+   */
+  removeHeaders?: readonly string[];
   // URL parameters
   /** Query string parameters */
   params?: Record<string, string | number | boolean | (string | number | boolean)[]> | URLSearchParams;
