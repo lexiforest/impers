@@ -147,6 +147,9 @@ export class Session {
 
       // Set headers
       const headerList = this.buildHeaders(mergedOptions, fingerprint);
+      // `Name:` with nothing after it is how curl is told to drop a header it would
+      // otherwise generate. See `RequestOptions.removeHeaders`.
+      for (const name of mergedOptions.removeHeaders ?? []) headerList.push(`${name}:`);
       if (headerList.length > 0) {
         const slist = new SList();
         headerList.forEach((h) => slist.append(h));
