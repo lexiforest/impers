@@ -70,7 +70,7 @@ const SYSTEM_LIBCURL_SEARCH_PATHS: Record<string, string[]> = {
 };
 
 const LIB_PREFIX = "libcurl-impersonate";
-export const LIBCURL_IMPERSONATE_VERSION = "v2.0.0";
+export const LIBCURL_IMPERSONATE_VERSION = "v2.1.1";
 export const LIBCURL_IMPERSONATE_RELEASE_URL =
   `https://api.github.com/repos/lexiforest/curl-impersonate/releases/tags/${LIBCURL_IMPERSONATE_VERSION}`;
 const CACHE_LOCK_POLL_MS = 100;
@@ -118,11 +118,11 @@ function getCacheRoot(): string | null {
 }
 
 function getCacheDir(cacheRoot: string, platform: string, arch: string): string {
-  return join(cacheRoot, `${platform}-${arch}`);
+  return join(cacheRoot, LIBCURL_IMPERSONATE_VERSION, `${platform}-${arch}`);
 }
 
 function getCacheLockDir(cacheRoot: string, platform: string, arch: string): string {
-  return join(cacheRoot, `${platform}-${arch}.lock`);
+  return join(cacheRoot, LIBCURL_IMPERSONATE_VERSION, `${platform}-${arch}.lock`);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -350,7 +350,7 @@ async function tryDownloadImpersonate(platform: string, arch: string): Promise<s
     return cached;
   }
 
-  mkdirSync(cacheRoot, { recursive: true });
+  mkdirSync(join(cacheRoot, LIBCURL_IMPERSONATE_VERSION), { recursive: true });
 
   try {
     return await withCacheLock(cacheRoot, platform, arch, async () => {

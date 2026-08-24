@@ -100,11 +100,11 @@ describe("Fingerprint", () => {
     const rows = FingerprintManager.listFingerprints(env);
 
     expect(rows).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: "chrome146", h3_fingerprints: true }),
+      expect.objectContaining({ name: "chrome150", h3_fingerprints: true }),
       expect.objectContaining({ name: "firefox147", h3_fingerprints: true }),
       expect.objectContaining({ name: "tor145" }),
     ]));
-    expect(resolveNativeImpersonateTarget("chrome")).toBe("chrome146");
+    expect(resolveNativeImpersonateTarget("chrome")).toBe("chrome150");
     expect(resolveNativeImpersonateTarget("safari18_4_ios")).toBe("safari184_ios");
     expect(resolveNativeImpersonateTarget("custom")).toBeNull();
   });

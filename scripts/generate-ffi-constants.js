@@ -118,7 +118,7 @@ function extractEntries(source, prefix) {
   return entries;
 }
 
-function renderObject(name, entries) {
+function renderObject(name, entries, formatValue = (value) => value) {
   if (!entries.length) {
     throw new Error(`No entries found for ${name}`);
   }
@@ -126,13 +126,17 @@ function renderObject(name, entries) {
   const output = [];
   output.push(`export const ${name} = {`);
   for (const entry of entries) {
-    output.push(`  ${entry.key}: ${entry.value},`);
+    output.push(`  ${entry.key}: ${formatValue(entry.value)},`);
   }
   output.push("} as const;");
   output.push("");
   output.push(`export type ${name} = (typeof ${name})[keyof typeof ${name}];`);
 
   return output.join("\n");
+}
+
+function removeParentheses(value) {
+  return value.replace(/[()]/g, "");
 }
 
 function replaceSection(source, startMarker, endMarker, replacement) {
@@ -160,7 +164,7 @@ const preprocessed = runPreprocessor(headerPath);
 const curlOptEntries = extractEntries(preprocessed, CURL_OPT_PREFIX);
 const curlInfoEntries = extractEntries(preprocessed, CURL_INFO_PREFIX);
 
-const optSection = renderObject("CurlOpt", curlOptEntries);
+const optSection = renderObject("CurlOpt", curlOptEntries, removeParentheses);
 const infoSection = renderObject("CurlInfo", curlInfoEntries);
 
 const optReplacement = [

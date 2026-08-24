@@ -111,6 +111,7 @@ export const NATIVE_IMPERSONATE_TARGETS: NativeFingerprintTarget[] = [
   { browser: "Chrome", version: "142", os: "macOS", os_version: "Tahoe", target_name: "chrome142", h3_fingerprints: false },
   { browser: "Chrome", version: "145", os: "macOS", os_version: "Tahoe", target_name: "chrome145", h3_fingerprints: true },
   { browser: "Chrome", version: "146", os: "macOS", os_version: "Tahoe", target_name: "chrome146", h3_fingerprints: true },
+  { browser: "Chrome", version: "150", os: "macOS", os_version: "Tahoe", target_name: "chrome150", h3_fingerprints: true },
   { browser: "Chrome", version: "99", os: "Android", os_version: "12", target_name: "chrome99_android", h3_fingerprints: false },
   { browser: "Chrome", version: "131", os: "Android", os_version: "14", target_name: "chrome131_android", h3_fingerprints: false },
   { browser: "Edge", version: "99", os: "Windows", os_version: "10", target_name: "edge99", h3_fingerprints: false },
@@ -134,7 +135,7 @@ export const NATIVE_IMPERSONATE_TARGETS: NativeFingerprintTarget[] = [
 ];
 
 const NATIVE_TARGET_ALIASES: Record<string, string> = {
-  chrome: "chrome146",
+  chrome: "chrome150",
   edge: "edge101",
   safari: "safari2601",
   safari_ios: "safari260_ios",
