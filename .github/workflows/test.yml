@@ -1,4 +1,4 @@
-name: Test on Ubuntu
+name: Test
 
 on:
   workflow_dispatch:
@@ -13,13 +13,15 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-22.04
+    name: ${{ matrix.os }} / Node.js ${{ matrix.node-version }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         node-version: [18, 20, 22, 24]
     steps:
       - uses: actions/checkout@v4
@@ -28,24 +30,31 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - run: npm ci
       - run: npm run test:ci
+        env:
+          IMPERS_DEBUG_TESTS: "1"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: node-diagnostic-reports
+          name: node-diagnostic-reports-${{ matrix.os }}-node-${{ matrix.node-version }}
           path: reports/
           if-no-files-found: ignore
 
   live-fingerprints:
+    name: Live fingerprints / ${{ matrix.os }}
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository &&
        github.actor != 'dependabot[bot]')
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -55,11 +64,10 @@ jobs:
       - name: Verify live fingerprint API secret
         env:
           IMPERSONATE_API_KEY: ${{ secrets.IMPERSONATE_API_KEY }}
-        run: |
-          if [ -z "$IMPERSONATE_API_KEY" ]; then
-            echo "::error::Repository secret IMPERSONATE_API_KEY is not configured"
-            exit 1
-          fi
+        run: >-
+          node -e "if (!process.env.IMPERSONATE_API_KEY) {
+          console.error('::error::Repository secret IMPERSONATE_API_KEY is not configured');
+          process.exit(1); }"
       - run: npm run test:live
         env:
           IMPERSONATE_API_KEY: ${{ secrets.IMPERSONATE_API_KEY }}

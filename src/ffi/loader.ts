@@ -413,7 +413,12 @@ function writeFileAtomic(outPath: string, data: Buffer): void {
   renameSync(tmpPath, outPath);
 }
 
-function writeExtractedEntries(entries: ExtractedEntry[], targetDir: string, platform: string): void {
+/** @internal Exported for archive extraction regression tests. */
+export function writeExtractedEntries(
+  entries: ExtractedEntry[],
+  targetDir: string,
+  platform: string
+): void {
   const symlinks: Array<{ outPath: string; linkName: string }> = [];
 
   for (const entry of entries) {
@@ -422,15 +427,13 @@ function writeExtractedEntries(entries: ExtractedEntry[], targetDir: string, pla
       continue;
     }
 
-    let relativePath = safePath;
     if (platform === "win32") {
-      if (!safePath.startsWith("bin/")) {
+      if (!safePath.startsWith("bin/") && !safePath.startsWith("lib/")) {
         continue;
       }
-      relativePath = safePath.slice(4);
-      relativePath = join("bin", relativePath);
     }
 
+    const relativePath = safePath;
     const outPath = join(targetDir, relativePath);
     mkdirSync(dirname(outPath), { recursive: true });
 

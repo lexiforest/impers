@@ -29,6 +29,16 @@ describe("Session", () => {
       expect(resp.ok).toBe(true);
     });
 
+    it("should make a request using the chrome impersonation alias", async () => {
+      const resp = await session.get(`${globalThis.TEST_SERVER_URL}/headers`, {
+        impersonate: "chrome",
+      });
+      const json = resp.json() as { headers: Record<string, string> };
+
+      expect(resp.statusCode).toBe(200);
+      expect(json.headers["user-agent"]).toContain("Mozilla/5.0");
+    });
+
     it("should include query parameters", async () => {
       const resp = await session.get(`${globalThis.TEST_SERVER_URL}/get`, {
         params: { foo: "bar", num: 123 },
