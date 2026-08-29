@@ -722,8 +722,11 @@ export const CurlWsFlag = {
   CURLWS_CONT: 1 << 2,
   CURLWS_CLOSE: 1 << 3,
   CURLWS_PING: 1 << 4,
-  CURLWS_PONG: 1 << 5,
-  CURLWS_OFFSET: 1 << 6,
+  // These two were the other way round. libcurl's websockets.h has OFFSET at 1<<5 and PONG
+  // at 1<<6, so every pong was sent as an offset-send with no frame type and rejected with
+  // CURLE_BAD_FUNCTION_ARGUMENT, and every received pong fell through to the BINARY default.
+  CURLWS_OFFSET: 1 << 5,
+  CURLWS_PONG: 1 << 6,
 } as const;
 
 export type CurlWsFlag = (typeof CurlWsFlag)[keyof typeof CurlWsFlag];
@@ -733,6 +736,7 @@ export type CurlWsFlag = (typeof CurlWsFlag)[keyof typeof CurlWsFlag];
  */
 export const CurlWsOpt = {
   CURLWS_RAW_MODE: 1 << 0,
+  CURLWS_NOAUTOPONG: 1 << 1,
 } as const;
 
 export type CurlWsOpt = (typeof CurlWsOpt)[keyof typeof CurlWsOpt];
