@@ -70,7 +70,7 @@ const SYSTEM_LIBCURL_SEARCH_PATHS: Record<string, string[]> = {
 };
 
 const LIB_PREFIX = "libcurl-impersonate";
-export const LIBCURL_IMPERSONATE_VERSION = "v2.1.1";
+export const LIBCURL_IMPERSONATE_VERSION = "v2.2.0";
 export const LIBCURL_IMPERSONATE_RELEASE_URL =
   `https://api.github.com/repos/lexiforest/curl-impersonate/releases/tags/${LIBCURL_IMPERSONATE_VERSION}`;
 const CACHE_LOCK_POLL_MS = 100;
