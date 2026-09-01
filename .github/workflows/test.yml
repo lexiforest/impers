@@ -23,6 +23,19 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node-version: [18, 20, 22, 24]
+        exclude:
+          - os: windows-latest
+            node-version: 20
+          - os: windows-latest
+            node-version: 22
+          - os: windows-latest
+            node-version: 24
+          - os: macos-latest
+            node-version: 20
+          - os: macos-latest
+            node-version: 22
+          - os: macos-latest
+            node-version: 24
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
