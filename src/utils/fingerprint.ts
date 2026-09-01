@@ -415,6 +415,9 @@ export function applyFingerprintOptions(
   if (fingerprint.tls_ech !== null) {
     curl.setOpt(CurlOpt.ECH, fingerprint.tls_ech);
   }
+  if (fingerprint.tls_trust_anchors !== null) {
+    curl.setOpt(CurlOpt.TLS_TRUST_ANCHORS, fingerprint.tls_trust_anchors.join(","));
+  }
 
   if (fingerprint.http2_settings) {
     curl.setOpt(CurlOpt.HTTP2_SETTINGS, fingerprint.http2_settings);

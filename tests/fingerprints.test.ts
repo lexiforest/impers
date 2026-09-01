@@ -37,6 +37,7 @@ describe("Fingerprint", () => {
     expect(fingerprint.http_version).toBe("v2");
     expect(fingerprint.tls_version).toBe("1.2");
     expect(fingerprint.tls_key_shares_limit).toBe(2);
+    expect(fingerprint.tls_trust_anchors).toBeNull();
     expect(fingerprint.http3_headers).toEqual({});
     expect(fingerprint.ws_tls_cert_compression).toBeNull();
   });
@@ -68,6 +69,7 @@ describe("Fingerprint", () => {
       JSON.stringify({
         custom: {
           headers: { "User-Agent": "fingerprint-agent" },
+          tls_trust_anchors: ["2.5.4.3", "2.5.4.10"],
           http3_headers: { "User-Agent": "h3-agent" },
           http3_header_order: "User-Agent",
           http3_tls_supported_groups: ["X25519", "P-256"],
@@ -83,6 +85,7 @@ describe("Fingerprint", () => {
     const fingerprint = FingerprintManager.getFingerprint("custom", env);
 
     expect(fingerprint).toBeInstanceOf(Fingerprint);
+    expect(fingerprint.tls_trust_anchors).toEqual(["2.5.4.3", "2.5.4.10"]);
     expect(fingerprint.http3_headers).toEqual({ "User-Agent": "h3-agent" });
     expect(fingerprint.http3_tls_supported_groups).toEqual(["X25519", "P-256"]);
     expect(fingerprint.ws_headers).toEqual({ "User-Agent": "ws-agent" });
@@ -115,6 +118,7 @@ describe("Fingerprint", () => {
       tls_extension_order: "0-21-11",
       tls_supported_groups: ["X25519Kyber768", "P-256"],
       tls_cert_compression: ["zlib"],
+      tls_trust_anchors: ["2.5.4.3", "2.5.4.10"],
       http2_settings: "1:65536;3:1000",
       header_order: "User-Agent,Host",
       http3_headers: { "User-Agent": "h3-agent" },
@@ -134,6 +138,7 @@ describe("Fingerprint", () => {
     expect(curl.options.get(CurlOpt.SSL_CERT_COMPRESSION)).toBe("zlib");
     expect(curl.options.get(CurlOpt.TLS_STATUS_REQUEST)).toBe(1);
     expect(curl.options.get(CurlOpt.TLS_SIGNED_CERT_TIMESTAMPS)).toBe(1);
+    expect(curl.options.get(CurlOpt.TLS_TRUST_ANCHORS)).toBe("2.5.4.3,2.5.4.10");
     expect(curl.options.get(CurlOpt.HTTP2_SETTINGS)).toBe("1:65536;3:1000");
     expect(curl.options.get(CurlOpt.HTTPHEADER_ORDER)).toBe("User-Agent,Host");
     expect(curl.options.get(CurlOpt.HTTP3_HTTPHEADER_ORDER)).toBe("User-Agent");
@@ -147,6 +152,14 @@ describe("Fingerprint", () => {
     ]);
     expect(curl.options.get(CurlOpt.WS_SSL_DISABLE_TICKET)).toBe(1);
     expect(curl.options.get(CurlOpt.WS_SSL_CERT_COMPRESSION)).toBe("");
+  });
+
+  it("does not apply unspecified TLS trust anchors", () => {
+    const curl = new FakeCurl();
+
+    applyFingerprintOptions(curl as unknown as Curl, new Fingerprint(), false);
+
+    expect(curl.options.has(CurlOpt.TLS_TRUST_ANCHORS)).toBe(false);
   });
 
   it("does not apply protocol-specific default headers when disabled", () => {

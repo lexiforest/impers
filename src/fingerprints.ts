@@ -32,6 +32,7 @@ export class Fingerprint {
   tls_signed_cert_timestamps: boolean = false;
   tls_ech: string | null = null;
   tls_permute_extensions: boolean = false;
+  tls_trust_anchors: string[] | null = null;
 
   headers: Record<string, string> = {};
   header_order: string = "";

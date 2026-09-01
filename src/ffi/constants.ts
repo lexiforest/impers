@@ -466,6 +466,8 @@ export const CurlOpt = {
   WS_SSL_DISABLE_TICKET: 0 + 1036,
   WS_SSL_CERT_COMPRESSION: 10000 + 1037,
   QUIC_CID_LENGTH: 10000 + 1038,
+  HTTP3_SSL_PERMUTE_EXTENSIONS: 0 + 1039,
+  TLS_TRUST_ANCHORS: 10000 + 1040,
 } as const;
 
 export type CurlOpt = (typeof CurlOpt)[keyof typeof CurlOpt];
