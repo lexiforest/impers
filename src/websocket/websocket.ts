@@ -91,7 +91,8 @@ export class AsyncWebSocket {
     if (options.headers) {
       const headers = new Headers(options.headers);
       const headerList = headers.toCurlHeaders();
-      // Note: Would need SList here for actual implementation
+      
+      this.curl.setStringList(CurlOpt.HTTPHEADER, headerList);
     }
 
     // Set timeout
