@@ -6,6 +6,7 @@ export interface Cookie {
   name: string;
   value: string;
   domain?: string;
+  domainSpecified?: boolean; // true: Domain attribute was explicit; false/absent: host-only
   path?: string;
   expires?: Date;
   maxAge?: number;
@@ -16,6 +17,7 @@ export interface Cookie {
 
 export interface CookieOptions {
   domain?: string;
+  domainSpecified?: boolean;
   path?: string;
   expires?: Date;
   maxAge?: number;
@@ -55,10 +57,13 @@ export class Cookies implements Iterable<Cookie> {
    * Set a cookie
    */
   set(name: string, value: string, options?: CookieOptions): void {
+    const domain = options?.domain?.replace(/^\./, "") || undefined;
+    const domainSpecified = options?.domainSpecified ?? Boolean(domain);
     const cookie: Cookie = {
       name,
       value,
-      domain: options?.domain?.replace(/^\./, "") || undefined,
+      domain,
+      domainSpecified,
       path: options?.path || "/",
       expires: options?.expires,
       maxAge: options?.maxAge,
@@ -86,7 +91,7 @@ export class Cookies implements Iterable<Cookie> {
     for (const cookie of this.cookies.values()) {
       if (cookie.name !== name) continue;
 
-      if (domain && cookie.domain && !this.matchesDomain(cookie.domain, domain)) {
+      if (domain && cookie.domain && !this.matchesDomain(cookie.domain, domain, cookie.domainSpecified)) {
         continue;
       }
 
@@ -113,7 +118,7 @@ export class Cookies implements Iterable<Cookie> {
     for (const cookie of this.cookies.values()) {
       if (cookie.name !== name) continue;
 
-      if (domain && cookie.domain && !this.matchesDomain(cookie.domain, domain)) {
+      if (domain && cookie.domain && !this.matchesDomain(cookie.domain, domain, cookie.domainSpecified)) {
         continue;
       }
 
@@ -141,7 +146,7 @@ export class Cookies implements Iterable<Cookie> {
     for (const [key, cookie] of this.cookies) {
       if (cookie.name !== name) continue;
 
-      if (domain && cookie.domain && !this.matchesDomain(cookie.domain, domain)) {
+      if (domain && cookie.domain && !this.matchesDomain(cookie.domain, domain, cookie.domainSpecified)) {
         continue;
       }
 
@@ -166,7 +171,7 @@ export class Cookies implements Iterable<Cookie> {
     }
 
     for (const [key, cookie] of this.cookies) {
-      if (domain && cookie.domain && !this.matchesDomain(cookie.domain, domain)) {
+      if (domain && cookie.domain && !this.matchesDomain(cookie.domain, domain, cookie.domainSpecified)) {
         continue;
       }
 
@@ -224,7 +229,7 @@ export class Cookies implements Iterable<Cookie> {
 
     return [...this.cookies.values()].filter((cookie) => {
       // Check domain match
-      if (cookie.domain && !this.matchesDomain(cookie.domain, hostname)) {
+      if (cookie.domain && !this.matchesDomain(cookie.domain, hostname, cookie.domainSpecified)) {
         return false;
       }
 
@@ -250,7 +255,7 @@ export class Cookies implements Iterable<Cookie> {
   /**
    * Check if cookie domain matches request domain
    */
-  private matchesDomain(cookieDomain: string, requestDomain: string): boolean {
+  private matchesDomain(cookieDomain: string, requestDomain: string, domainSpecified?: boolean): boolean {
     // Normalize domains
     const cookie = cookieDomain.toLowerCase().replace(/^\./, "");
     const request = requestDomain.toLowerCase();
@@ -261,7 +266,7 @@ export class Cookies implements Iterable<Cookie> {
     }
 
     // Subdomain match (cookie domain .example.com matches sub.example.com)
-    if (request.endsWith("." + cookie)) {
+    if (domainSpecified && request.endsWith("." + cookie)) {
       return true;
     }
 
@@ -342,6 +347,7 @@ export class Cookies implements Iterable<Cookie> {
       switch (lowerName) {
         case "domain":
           cookie.domain = attrValue?.replace(/^\./, "") || undefined;
+          cookie.domainSpecified = true;
           break;
         case "path":
           cookie.path = attrValue;
@@ -373,6 +379,7 @@ export class Cookies implements Iterable<Cookie> {
     if (requestUrl) {
       if (!cookie.domain) {
         cookie.domain = requestUrl.hostname;
+        cookie.domainSpecified = false;
       }
       if (!cookie.path) {
         cookie.path = requestUrl.pathname.replace(/\/[^/]*$/, "") || "/";
