@@ -231,6 +231,8 @@ export interface WebSocketOptions {
   verify?: boolean;
   /** Browser to impersonate */
   impersonate?: string;
+  /** Send the impersonated browser's own default headers (default: true) */
+  defaultHeaders?: boolean;
   /** Connection timeout in seconds */
   timeout?: number;
   /** Auto-reconnect on disconnect */
