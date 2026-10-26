@@ -219,6 +219,8 @@ export interface SessionOptions extends Omit<RequestOptions, "params" | "data" |
  * WebSocket options
  */
 export interface WebSocketOptions {
+  /** Negotiate permessage-deflate compression (default: false; curl-impersonate 2.3.0+ with zlib) */
+  perMessageDeflate?: boolean;
   /** Request headers */
   headers?: HeadersInit;
   /** Request cookies */

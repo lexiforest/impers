@@ -367,9 +367,7 @@ export function applyFingerprintOptions(
 
   if (fingerprint.tls_extension_order) {
     const extensionOrder = stripPaddingExtension(fingerprint.tls_extension_order);
-    if (!fingerprint.tls_permute_extensions) {
-      curl.setOpt(CurlOpt.TLS_EXTENSION_ORDER, extensionOrder);
-    }
+    curl.setOpt(CurlOpt.TLS_EXTENSION_ORDER, extensionOrder);
   }
 
   curl.setOpt(CurlOpt.SSL_ENABLE_ALPN, Number(fingerprint.tls_alpn));
@@ -472,6 +470,9 @@ export function applyFingerprintOptions(
   }
   if (fingerprint.quic_transport_parameters) {
     curl.setOpt(CurlOpt.QUIC_TRANSPORT_PARAMETERS, fingerprint.quic_transport_parameters);
+  }
+  if (fingerprint.quic_initial_packet_number !== null) {
+    curl.setOpt(CurlOpt.QUIC_INITIAL_PACKET_NUMBER, fingerprint.quic_initial_packet_number);
   }
   if (defaultHeaders && Object.keys(fingerprint.http3_headers).length > 0) {
     curl.setStringList(

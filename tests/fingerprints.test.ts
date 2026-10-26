@@ -73,6 +73,7 @@ describe("Fingerprint", () => {
           http3_headers: { "User-Agent": "h3-agent" },
           http3_header_order: "User-Agent",
           http3_tls_supported_groups: ["X25519", "P-256"],
+          quic_initial_packet_number: -1,
           ws_headers: { "User-Agent": "ws-agent" },
           ws_header_order: "User-Agent",
           ws_disable_session_ticket: true,
@@ -88,6 +89,7 @@ describe("Fingerprint", () => {
     expect(fingerprint.tls_trust_anchors).toEqual(["2.5.4.3", "2.5.4.10"]);
     expect(fingerprint.http3_headers).toEqual({ "User-Agent": "h3-agent" });
     expect(fingerprint.http3_tls_supported_groups).toEqual(["X25519", "P-256"]);
+    expect(fingerprint.quic_initial_packet_number).toBe(-1);
     expect(fingerprint.ws_headers).toEqual({ "User-Agent": "ws-agent" });
     expect(fingerprint.ws_disable_session_ticket).toBe(true);
     expect(fingerprint.ws_tls_cert_compression).toEqual([]);
@@ -105,9 +107,16 @@ describe("Fingerprint", () => {
     expect(rows).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "chrome150", h3_fingerprints: true }),
       expect.objectContaining({ name: "firefox147", h3_fingerprints: true }),
+      ...["chrome151", "chrome151_macos", "chrome152", "chrome152_macos", "safari270", "safari270_ios"]
+        .map((name) => expect.objectContaining({ name, h3_fingerprints: true })),
+      ...["firefox153", "firefox154", "firefox155"]
+        .map((name) => expect.objectContaining({ name, os: "Windows", h3_fingerprints: false })),
       expect.objectContaining({ name: "tor145" }),
     ]));
-    expect(resolveNativeImpersonateTarget("chrome")).toBe("chrome150");
+    expect(resolveNativeImpersonateTarget("chrome")).toBe("chrome152");
+    expect(resolveNativeImpersonateTarget("firefox")).toBe("firefox155");
+    expect(resolveNativeImpersonateTarget("safari")).toBe("safari270");
+    expect(resolveNativeImpersonateTarget("safari_ios")).toBe("safari270_ios");
     expect(resolveNativeImpersonateTarget("safari18_4_ios")).toBe("safari184_ios");
     expect(resolveNativeImpersonateTarget("custom")).toBeNull();
   });
@@ -160,6 +169,25 @@ describe("Fingerprint", () => {
     applyFingerprintOptions(curl as unknown as Curl, new Fingerprint(), false);
 
     expect(curl.options.has(CurlOpt.TLS_TRUST_ANCHORS)).toBe(false);
+    expect(curl.options.has(CurlOpt.QUIC_INITIAL_PACKET_NUMBER)).toBe(false);
+  });
+
+  it.each([-1, 0, 1, 2147483647])("applies QUIC initial packet number %i", (value) => {
+    const curl = new FakeCurl();
+    applyFingerprintOptions(curl as unknown as Curl, new Fingerprint({
+      quic_initial_packet_number: value,
+    }));
+    expect(curl.options.get(CurlOpt.QUIC_INITIAL_PACKET_NUMBER)).toBe(value);
+  });
+
+  it("keeps the TLS extension allowlist when permuting extensions", () => {
+    const curl = new FakeCurl();
+    applyFingerprintOptions(curl as unknown as Curl, new Fingerprint({
+      tls_extension_order: "0-21-11",
+      tls_permute_extensions: true,
+    }));
+    expect(curl.options.get(CurlOpt.TLS_EXTENSION_ORDER)).toBe("0-11");
+    expect(curl.options.get(CurlOpt.SSL_PERMUTE_EXTENSIONS)).toBe(1);
   });
 
   it("does not apply protocol-specific default headers when disabled", () => {

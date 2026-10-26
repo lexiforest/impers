@@ -1,7 +1,9 @@
 import koffi from "koffi";
 import { resolveLibcurlPath } from "../utils/platform.js";
 
-const lib = koffi.load(await resolveLibcurlPath());
+const libraryPath = await resolveLibcurlPath();
+const lib = koffi.load(libraryPath);
+let asyncLibraryPinned = false;
 const koffiTypeSuffix = `${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
 // Type aliases for clarity
@@ -51,6 +53,23 @@ const curl_easy_perform = lib.func("int curl_easy_perform(void *)");
  * which is critical when the mock server runs in the same process.
  */
 function curl_easy_perform_async(handle: CurlHandle): Promise<number> {
+  if (process.platform === "darwin" && !asyncLibraryPinned) {
+    // Koffi can unload libcurl before libuv's workers exit. BoringSSL registers
+    // thread-local destructors on those workers, so their code must remain
+    // mapped until process exit. These flags come from macOS <dlfcn.h>.
+    const system = koffi.load("/usr/lib/libSystem.B.dylib");
+    const dlopen = system.func("void *dlopen(const char *, int)");
+    const dlclose = system.func("int dlclose(void *)");
+    const RTLD_NOW = 0x2;
+    const RTLD_LOCAL = 0x4;
+    const RTLD_NODELETE = 0x80;
+    const pinned = dlopen(libraryPath, RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE);
+    if (!pinned) {
+      return Promise.reject(new Error("Failed to keep libcurl loaded for asynchronous transfers"));
+    }
+    dlclose(pinned);
+    asyncLibraryPinned = true;
+  }
   return new Promise<number>((resolve, reject) => {
     (curl_easy_perform as unknown as { async: (handle: CurlHandle, cb: (err: Error | null, code: number) => void) => void })
       .async(handle, (err: Error | null, code: number) => {
@@ -71,7 +90,7 @@ function curl_easy_setopt_long(
   option: number,
   value: number
 ): number {
-  return curl_easy_setopt_variadic(handle, option, "int", value) as number;
+  return curl_easy_setopt_variadic(handle, option, "long", value) as number;
 }
 
 function curl_easy_setopt_string(
@@ -116,8 +135,8 @@ function curl_easy_getinfo_long(
   handle: CurlHandle,
   info: number
 ): { code: number; value: number } {
-  const out = new Int32Array(1);
-  const code = curl_easy_getinfo_variadic(handle, info, "int *", out) as number;
+  const out = [0];
+  const code = curl_easy_getinfo_variadic(handle, info, koffi.out("long *"), out) as number;
   return { code, value: out[0] };
 }
 
@@ -135,7 +154,7 @@ function curl_easy_getinfo_string(
   info: number
 ): { code: number; value: string | null } {
   const out = [null] as [string | null];
-  const code = curl_easy_getinfo_variadic(handle, info, "char **", out) as number;
+  const code = curl_easy_getinfo_variadic(handle, info, koffi.out("char **"), out) as number;
   return { code, value: out[0] };
 }
 
@@ -144,7 +163,7 @@ function curl_easy_getinfo_slist(
   info: number
 ): { code: number; value: CurlSList | null } {
   const out = [null] as [CurlSList | null];
-  const code = curl_easy_getinfo_variadic(handle, info, "void **", out) as number;
+  const code = curl_easy_getinfo_variadic(handle, info, koffi.out("void **"), out) as number;
   return { code, value: out[0] };
 }
 
@@ -171,7 +190,7 @@ function curl_easy_getinfo_ptr(
   info: number
 ): { code: number; value: unknown } {
   const out = [null] as [unknown];
-  const code = curl_easy_getinfo_variadic(handle, info, "void **", out) as number;
+  const code = curl_easy_getinfo_variadic(handle, info, koffi.out("void **"), out) as number;
   return { code, value: out[0] };
 }
 
@@ -279,12 +298,12 @@ function curl_multi_poll(
 }
 
 // curl_multi_timeout(CURLM *multi, long *timeout)
-const curl_multi_timeout_fn = lib.func("int curl_multi_timeout(void *, long *)");
+const curl_multi_timeout_fn = lib.func("int curl_multi_timeout(void *, _Out_ long *)");
 
 function curl_multi_timeout(
   multi: CurlMultiHandle
 ): { code: number; timeoutMs: number } {
-  const timeout = new Int32Array(1);
+  const timeout = [0];
   const code = curl_multi_timeout_fn(multi, timeout) as number;
   return { code, timeoutMs: timeout[0] };
 }
@@ -367,7 +386,7 @@ function curl_multi_setopt_off_t(
 
 // curl_ws_recv(CURL *curl, void *buffer, size_t buflen, size_t *recv, const struct curl_ws_frame **meta)
 const curl_ws_recv_fn = lib.func(
-  "int curl_ws_recv(void *, void *, size_t, size_t *, void **)"
+  "int curl_ws_recv(void *, void *, size_t, size_t *, _Out_ void **)"
 );
 
 interface WsFrame {

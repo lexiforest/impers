@@ -12,7 +12,7 @@ import {
   curl_ws_send,
   type CurlHandle,
 } from "../ffi/libcurl.js";
-import { CurlOpt, CurlCode, CurlWsFlag } from "../ffi/constants.js";
+import { CurlOpt, CurlCode, CurlWsFlag, CurlWsOpt } from "../ffi/constants.js";
 import { WebSocketError, WebSocketClosed } from "../utils/errors.js";
 import { Headers } from "../http/headers.js";
 import type { WebSocketOptions } from "../types/options.js";
@@ -81,22 +81,29 @@ export class AsyncWebSocket {
     this.curl = new Curl();
     this.handle = this.curl.getHandle()!;
 
-    // Configure WebSocket URL (curl expects ws:// or wss:// scheme)
-    this.curl.setOpt(CurlOpt.URL, url);
+    try {
+      // Configure WebSocket URL (curl expects ws:// or wss:// scheme)
+      this.curl.setOpt(CurlOpt.URL, url);
 
-    // Enable WebSocket upgrade
-    this.curl.setOpt(CurlOpt.CONNECT_ONLY, 2); // 2 = WebSocket mode
+      // Enable WebSocket upgrade
+      this.curl.setOpt(CurlOpt.CONNECT_ONLY, 2); // 2 = WebSocket mode
 
-    // Set headers
-    if (options.headers) {
-      const headers = new Headers(options.headers);
-      const headerList = headers.toCurlHeaders();
-      // Note: Would need SList here for actual implementation
-    }
+      if (options.perMessageDeflate) {
+        this.curl.setOpt(CurlOpt.WS_OPTIONS, CurlWsOpt.CURLWS_PERMESSAGE_DEFLATE);
+      }
 
-    // Set timeout
-    if (options.timeout) {
-      this.curl.setOpt(CurlOpt.TIMEOUT, options.timeout);
+      // Set headers
+      if (options.headers) {
+        this.curl.setStringList(CurlOpt.HTTPHEADER, new Headers(options.headers).toCurlHeaders());
+      }
+
+      // Set timeout
+      if (options.timeout) {
+        this.curl.setOpt(CurlOpt.TIMEOUT, options.timeout);
+      }
+    } catch (error) {
+      this.curl.cleanup();
+      throw error;
     }
   }
 

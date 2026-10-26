@@ -1,26 +1,13 @@
 /**
  * libcurl constants
- * Based on curl.h - https://curl.se/libcurl/c/
+ * Based on curl-impersonate 2.3.1 (curl 8.23.0) headers.
  */
 
 // Option type bases
 const CURLOPTTYPE_LONG = 0;
 const CURLOPTTYPE_OBJECTPOINT = 10000;
-const CURLOPTTYPE_FUNCTIONPOINT = 20000;
-const CURLOPTTYPE_OFF_T = 30000;
-const CURLOPTTYPE_BLOB = 40000;
 const CURLOPTTYPE_STRINGPOINT = CURLOPTTYPE_OBJECTPOINT;
 const CURLOPTTYPE_SLISTPOINT = CURLOPTTYPE_OBJECTPOINT;
-const CURLOPTTYPE_CBPOINT = CURLOPTTYPE_OBJECTPOINT;
-
-// Info type bases
-const CURLINFO_STRING = 0x100000;
-const CURLINFO_LONG = 0x200000;
-const CURLINFO_DOUBLE = 0x300000;
-const CURLINFO_SLIST = 0x400000;
-const CURLINFO_PTR = 0x400000;
-const CURLINFO_SOCKET = 0x500000;
-const CURLINFO_OFF_T = 0x600000;
 
 /**
  * CURLcode - Error codes returned by libcurl functions
@@ -306,9 +293,6 @@ export const CurlOpt = {
   CHUNK_DATA: 10000 + 201,
   FNMATCH_DATA: 10000 + 202,
   RESOLVE: 10000 + 203,
-  TLSAUTH_USERNAME: 10000 + 204,
-  TLSAUTH_PASSWORD: 10000 + 205,
-  TLSAUTH_TYPE: 10000 + 206,
   TRANSFER_ENCODING: 0 + 207,
   CLOSESOCKETFUNCTION: 20000 + 208,
   CLOSESOCKETDATA: 10000 + 209,
@@ -349,9 +333,6 @@ export const CurlOpt = {
   PROXY_SSL_VERIFYPEER: 0 + 248,
   PROXY_SSL_VERIFYHOST: 0 + 249,
   PROXY_SSLVERSION: 0 + 250,
-  PROXY_TLSAUTH_USERNAME: 10000 + 251,
-  PROXY_TLSAUTH_PASSWORD: 10000 + 252,
-  PROXY_TLSAUTH_TYPE: 10000 + 253,
   PROXY_SSLCERT: 10000 + 254,
   PROXY_SSLCERTTYPE: 10000 + 255,
   PROXY_SSLKEY: 10000 + 256,
@@ -427,6 +408,10 @@ export const CurlOpt = {
   TCP_KEEPCNT: 0 + 326,
   UPLOAD_FLAGS: 0 + 327,
   SSL_SIGNATURE_ALGORITHMS: 10000 + 328,
+  HTTPSIG_ALGORITHM: 0 + 329,
+  HTTPSIG_KEY: 10000 + 330,
+  HTTPSIG_KEYID: 10000 + 331,
+  HTTPSIG_HEADERS: 10000 + 332,
   IMPERSONATE: 10000 + 999,
   HTTPBASEHEADER: 10000 + 1000,
   SSL_SIG_HASH_ALGS: 10000 + 1001,
@@ -468,6 +453,7 @@ export const CurlOpt = {
   QUIC_CID_LENGTH: 10000 + 1038,
   HTTP3_SSL_PERMUTE_EXTENSIONS: 0 + 1039,
   TLS_TRUST_ANCHORS: 10000 + 1040,
+  QUIC_INITIAL_PACKET_NUMBER: 0 + 1041,
 } as const;
 
 export type CurlOpt = (typeof CurlOpt)[keyof typeof CurlOpt];
@@ -663,12 +649,22 @@ export const CurlAuth = {
   CURLAUTH_NTLM_WB: 1 << 5,
   CURLAUTH_BEARER: 1 << 6,
   CURLAUTH_AWS_SIGV4: 1 << 7,
+  CURLAUTH_HTTPSIG: 1 << 8,
   CURLAUTH_ONLY: 1 << 31,
-  CURLAUTH_ANY: ~(1 << 4), // ~CURLAUTH_DIGEST_IE
-  CURLAUTH_ANYSAFE: ~((1 << 0) | (1 << 4)), // ~(CURLAUTH_BASIC | CURLAUTH_DIGEST_IE)
+  CURLAUTH_ANY: ~((1 << 4) | (1 << 8)), // Excludes DIGEST_IE and HTTPSIG
+  CURLAUTH_ANYSAFE: ~((1 << 0) | (1 << 4) | (1 << 8)), // Also excludes BASIC
 } as const;
 
 export type CurlAuth = (typeof CurlAuth)[keyof typeof CurlAuth];
+
+/** HTTP Message Signature algorithms for CURLOPT_HTTPSIG_ALGORITHM. */
+export const CurlHttpSig = {
+  CURLHTTPSIG_NONE: 0,
+  CURLHTTPSIG_ED25519: 1,
+  CURLHTTPSIG_HMAC_SHA256: 2,
+} as const;
+
+export type CurlHttpSig = (typeof CurlHttpSig)[keyof typeof CurlHttpSig];
 
 /**
  * Proxy types
@@ -724,8 +720,8 @@ export const CurlWsFlag = {
   CURLWS_CONT: 1 << 2,
   CURLWS_CLOSE: 1 << 3,
   CURLWS_PING: 1 << 4,
-  CURLWS_PONG: 1 << 5,
-  CURLWS_OFFSET: 1 << 6,
+  CURLWS_PONG: 1 << 6,
+  CURLWS_OFFSET: 1 << 5,
 } as const;
 
 export type CurlWsFlag = (typeof CurlWsFlag)[keyof typeof CurlWsFlag];
@@ -735,6 +731,9 @@ export type CurlWsFlag = (typeof CurlWsFlag)[keyof typeof CurlWsFlag];
  */
 export const CurlWsOpt = {
   CURLWS_RAW_MODE: 1 << 0,
+  CURLWS_NOAUTOPONG: 1 << 1,
+  /** curl-impersonate 2.3.0+: negotiate permessage-deflate (requires zlib). */
+  CURLWS_PERMESSAGE_DEFLATE: 1 << 2,
 } as const;
 
 export type CurlWsOpt = (typeof CurlWsOpt)[keyof typeof CurlWsOpt];
@@ -861,9 +860,11 @@ export type CurlPipe = (typeof CurlPipe)[keyof typeof CurlPipe];
  * curl-impersonate specific CURLOPT options for TLS/HTTP2 fingerprinting
  */
 export const CurlImpersonateOpt = {
+  /** Impersonation target (string, name[:yes|no]) */
+  CURLOPT_IMPERSONATE: CURLOPTTYPE_STRINGPOINT + 999,
   // TLS fingerprinting options
-  /** Base header for impersonation (string) */
-  CURLOPT_HTTPBASEHEADER: CURLOPTTYPE_STRINGPOINT + 1000,
+  /** Base headers for impersonation (curl_slist) */
+  CURLOPT_HTTPBASEHEADER: CURLOPTTYPE_SLISTPOINT + 1000,
   /** Signature hash algorithms (string, comma-separated) */
   CURLOPT_SSL_SIG_HASH_ALGS: CURLOPTTYPE_STRINGPOINT + 1001,
   /** Enable ALPS extension (long, 0 or 1) */
@@ -906,6 +907,8 @@ export const CurlImpersonateOpt = {
   CURLOPT_TLS_USE_NEW_ALPS_CODEPOINT: CURLOPTTYPE_LONG + 1020,
   /** Disable HTTP/2 priority frames (long, 0 or 1) */
   CURLOPT_HTTP2_NO_PRIORITY: CURLOPTTYPE_LONG + 1021,
+  /** Prevent connection reuse across different proxy credentials (long) */
+  CURLOPT_PROXY_CREDENTIAL_NO_REUSE: CURLOPTTYPE_LONG + 1022,
   /** Do not combine Cookie headers (long, 0 or 1) */
   CURLOPT_SPLIT_COOKIES: CURLOPTTYPE_LONG + 1023,
   /** Multipart form boundary (string) */
@@ -936,6 +939,14 @@ export const CurlImpersonateOpt = {
   CURLOPT_WS_SSL_DISABLE_TICKET: CURLOPTTYPE_LONG + 1036,
   /** WebSocket certificate compression algorithms (string) */
   CURLOPT_WS_SSL_CERT_COMPRESSION: CURLOPTTYPE_STRINGPOINT + 1037,
+  /** QUIC connection ID length profile (string: webkit or firefox) */
+  CURLOPT_QUIC_CID_LENGTH: CURLOPTTYPE_STRINGPOINT + 1038,
+  /** Permute HTTP/3 TLS extensions (long, 0 or 1) */
+  CURLOPT_HTTP3_SSL_PERMUTE_EXTENSIONS: CURLOPTTYPE_LONG + 1039,
+  /** TLS trust anchor identifiers (string, comma-separated relative OIDs) */
+  CURLOPT_TLS_TRUST_ANCHORS: CURLOPTTYPE_STRINGPOINT + 1040,
+  /** Initial QUIC packet number (long, -1 for randomization or 0..INT32_MAX) */
+  CURLOPT_QUIC_INITIAL_PACKET_NUMBER: CURLOPTTYPE_LONG + 1041,
 } as const;
 
 export type CurlImpersonateOpt = (typeof CurlImpersonateOpt)[keyof typeof CurlImpersonateOpt];

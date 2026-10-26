@@ -5,7 +5,28 @@ sidebar_label: Impersonation
 
 # Supported Impersonate Browsers
 
-`curl_cffi` supports the same browser versions preset as supported by our [fork](https://github.com/lexiforest/curl-impersonate) of [curl-impersonate](https://github.com/lwthiker/curl-impersonate):
+`impers` supports the browser presets in [curl-impersonate 2.3.1](https://github.com/lexiforest/curl-impersonate/tree/v2.3.1).
+
+The current aliases are `chrome` → `chrome152` (Windows), `firefox` →
+`firefox155` (Windows), `safari` → `safari270` (macOS), and `safari_ios` →
+`safari270_ios`. For Chrome on macOS, select `chrome151_macos` or
+`chrome152_macos` explicitly. `safari_beta` and `safari_ios_beta` also select
+the Safari 27.0 targets.
+
+Chrome 145/146/150/151/152, their macOS variants, Firefox 147, and Safari 27.0
+include dedicated HTTP/3 fingerprints. Firefox 153/154/155 include TLS and HTTP/2
+fingerprints only. Set `httpVersion: "v3"` to allow HTTP/2 or HTTP/1.1 fallback,
+or `httpVersion: "v3only"` to require HTTP/3:
+
+```ts
+const response = await impers.get("https://example.com", {
+  impersonate: "chrome152_macos",
+  httpVersion: "v3",
+});
+```
+
+Native profiles choose their HTTP/3 or regular default headers after protocol
+negotiation. Request headers override individual defaults on either protocol.
 
 The open source version of `impers` includes versions when we are adding new capabilities for impersonating.
 If you see a version, e.g. `chrome135`, was skipped, it's simply because there's nothing new or we were busy at that time. 

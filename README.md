@@ -45,11 +45,11 @@ npm install impers
 
 **libcurl-impersonate**: For full fingerprinting support, you need [curl-impersonate](https://github.com/lexiforest/curl-impersonate) installed. Standard libcurl works but without impersonation features.
 
-Luckily, if you have an internet connection, `impers` will download latestcurl-impersonate,
-currently `v2.0.0`, at the first launch. The version is pinned so fresh installations use the
-same native library release.
+If no local curl-impersonate library is found, `impers` downloads `v2.3.1`
+(based on curl 8.23.0) at first launch. The download version is pinned and cached
+by version so fresh installations use the same native library release.
 
-If you will to use your own version, set the `LIBCURL_PATH` environment variable:
+To use your own version, set the `LIBCURL_PATH` environment variable:
 
 ```sh
 export LIBCURL_PATH=/path/to/libcurl-impersonate.so
@@ -124,13 +124,24 @@ await session.close();
 
 | Browser | Versions |
 |---------|----------|
-| Chrome | chrome99, chrome100, chrome101, chrome104, chrome107, chrome110, chrome116, chrome119, chrome120, chrome123, chrome124, chrome131, chrome133a, chrome136, chrome142, chrome145, chrome146, chrome150 |
+| Chrome | chrome99, chrome100, chrome101, chrome104, chrome107, chrome110, chrome116, chrome119, chrome120, chrome123, chrome124, chrome131, chrome133a, chrome136, chrome142, chrome145, chrome146, chrome150, chrome151, chrome151_macos, chrome152, chrome152_macos |
 | Chrome Android | chrome99_android, chrome131_android |
-| Safari | safari153, safari155, safari170, safari180, safari184, safari260, safari2601 |
-| Safari iOS | safari172_ios, safari180_ios, safari184_ios, safari260_ios |
-| Firefox | firefox133, firefox135, firefox144, firefox147 |
+| Safari | safari153, safari155, safari170, safari180, safari184, safari260, safari2601, safari270 |
+| Safari iOS | safari172_ios, safari180_ios, safari184_ios, safari260_ios, safari270_ios |
+| Firefox | firefox133, firefox135, firefox144, firefox147, firefox153, firefox154, firefox155 |
 | Tor | tor145 |
 | Edge | edge99, edge101 |
+
+The aliases `chrome`, `firefox`, `safari`, and `safari_ios` select `chrome152`,
+`firefox155`, `safari270`, and `safari270_ios`. Chrome 151/152 and Firefox 153–155
+use Windows profiles; use the explicit `_macos` Chrome targets for macOS.
+
+Dedicated HTTP/3 fingerprints are available for Chrome 145, 146, 150, 151, and
+152 (including the macOS variants), Firefox 147, and Safari 27.0. Select
+`httpVersion: "v3"` to allow fallback, or `"v3only"` to require HTTP/3.
+Firefox 153–155 have TLS and HTTP/2 fingerprints only. Native profiles select
+their default headers for the negotiated protocol; request headers override
+those defaults.
 
 If you are trying to impersonate a target other than a browser, use `ja3` and `akamai` options to specify your own customized fingerprints.
 
@@ -220,17 +231,20 @@ const ws = await impers.wsConnect("wss://echo.websocket.org", {
   impersonate: "chrome124",
 });
 
-await ws.send("Hello, World!");
+await ws.sendStr("Hello, World!");
 
 for await (const message of ws) {
   console.log("Received:", message);
-  if (message.type === "text" && message.data === "Hello, World!") {
+  if (message.type === "text" && message.data.toString() === "Hello, World!") {
     break;
   }
 }
 
 await ws.close();
 ```
+
+Use `perMessageDeflate: true` in `wsConnect` options to negotiate compression
+with curl-impersonate 2.3.0. If the server declines, messages remain uncompressed.
 
 ### Low-level Curl API
 

@@ -31,3 +31,17 @@ const extraFp: impers.ExtraFingerprint = {
 
 const r2 = await impers.get("https://tls.peet.ws/api/all", { extraFp });
 ```
+
+Editable `Fingerprint` objects support `quic_initial_packet_number` for HTTP/3:
+`null` leaves the native default unchanged, `0` through `2147483647` selects a
+fixed initial packet number, and `-1` enables Firefox-style randomization.
+This requires curl-impersonate 2.3.0 or later. For low-level requests, use
+`curl.setOpt(CurlOpt.QUIC_INITIAL_PACKET_NUMBER, -1)`.
+
+You can combine `tls_extension_order` and `tls_permute_extensions: true` to
+shuffle the selected TLS extensions. The explicit extension list is retained.
+
+For custom fingerprints, `http3_headers` sets the complete HTTP/3 custom header
+list, replacing the regular merged headers on HTTP/3 requests. To override
+individual headers of a native browser profile, use the request `headers`
+option instead.

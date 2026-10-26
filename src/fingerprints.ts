@@ -53,6 +53,8 @@ export class Fingerprint {
   http3_header_order: string = "";
   http3_tls_supported_groups: string[] = [];
   quic_transport_parameters: string = "";
+  /** -1 randomizes like Firefox; 0..2147483647 selects a fixed packet number. */
+  quic_initial_packet_number: number | null = null;
 
   ws_headers: Record<string, string> = {};
   ws_header_order: string = "";
@@ -113,6 +115,10 @@ export const NATIVE_IMPERSONATE_TARGETS: NativeFingerprintTarget[] = [
   { browser: "Chrome", version: "145", os: "macOS", os_version: "Tahoe", target_name: "chrome145", h3_fingerprints: true },
   { browser: "Chrome", version: "146", os: "macOS", os_version: "Tahoe", target_name: "chrome146", h3_fingerprints: true },
   { browser: "Chrome", version: "150", os: "macOS", os_version: "Tahoe", target_name: "chrome150", h3_fingerprints: true },
+  { browser: "Chrome", version: "151", os: "Windows", os_version: "10", target_name: "chrome151", h3_fingerprints: true },
+  { browser: "Chrome", version: "151", os: "macOS", os_version: "26.0", target_name: "chrome151_macos", h3_fingerprints: true },
+  { browser: "Chrome", version: "152", os: "Windows", os_version: "10", target_name: "chrome152", h3_fingerprints: true },
+  { browser: "Chrome", version: "152", os: "macOS", os_version: "26.0", target_name: "chrome152_macos", h3_fingerprints: true },
   { browser: "Chrome", version: "99", os: "Android", os_version: "12", target_name: "chrome99_android", h3_fingerprints: false },
   { browser: "Chrome", version: "131", os: "Android", os_version: "14", target_name: "chrome131_android", h3_fingerprints: false },
   { browser: "Edge", version: "99", os: "Windows", os_version: "10", target_name: "edge99", h3_fingerprints: false },
@@ -128,22 +134,27 @@ export const NATIVE_IMPERSONATE_TARGETS: NativeFingerprintTarget[] = [
   { browser: "Safari", version: "26.0", os: "macOS", os_version: "Tahoe", target_name: "safari260", h3_fingerprints: false },
   { browser: "Safari", version: "26.0.1", os: "macOS", os_version: "Tahoe", target_name: "safari2601", h3_fingerprints: false },
   { browser: "Safari", version: "26.0", os: "iOS", os_version: "26.0", target_name: "safari260_ios", h3_fingerprints: false },
+  { browser: "Safari", version: "27.0", os: "macOS", os_version: "27.0", target_name: "safari270", h3_fingerprints: true },
+  { browser: "Safari", version: "27.0", os: "iOS", os_version: "27.0", target_name: "safari270_ios", h3_fingerprints: true },
   { browser: "Firefox", version: "133.0", os: "macOS", os_version: "Sonoma", target_name: "firefox133", h3_fingerprints: false },
   { browser: "Firefox", version: "135.0", os: "macOS", os_version: "Sonoma", target_name: "firefox135", h3_fingerprints: false },
   { browser: "Firefox", version: "144.0", os: "macOS", os_version: "Tahoe", target_name: "firefox144", h3_fingerprints: false },
   { browser: "Firefox", version: "147.0", os: "macOS", os_version: "Tahoe", target_name: "firefox147", h3_fingerprints: true },
+  { browser: "Firefox", version: "153.0", os: "Windows", os_version: "10", target_name: "firefox153", h3_fingerprints: false },
+  { browser: "Firefox", version: "154.0", os: "Windows", os_version: "10", target_name: "firefox154", h3_fingerprints: false },
+  { browser: "Firefox", version: "155.0", os: "Windows", os_version: "10", target_name: "firefox155", h3_fingerprints: false },
   { browser: "Tor", version: "14.5", os: "macOS", os_version: "Sonoma", target_name: "tor145", h3_fingerprints: false },
 ];
 
 const NATIVE_TARGET_ALIASES: Record<string, string> = {
-  chrome: "chrome150",
+  chrome: "chrome152",
   edge: "edge101",
-  safari: "safari2601",
-  safari_ios: "safari260_ios",
-  safari_beta: "safari2601",
-  safari_ios_beta: "safari260_ios",
+  safari: "safari270",
+  safari_ios: "safari270_ios",
+  safari_beta: "safari270",
+  safari_ios_beta: "safari270_ios",
   chrome_android: "chrome131_android",
-  firefox: "firefox147",
+  firefox: "firefox155",
   tor: "tor145",
   safari15_3: "safari153",
   safari15_5: "safari155",

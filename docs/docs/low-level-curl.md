@@ -28,3 +28,16 @@ try {
   curl.cleanup();
 }
 ```
+
+The exported constants follow curl-impersonate 2.3.1 / curl 8.23.0, including
+`CurlOpt.QUIC_INITIAL_PACKET_NUMBER`, `CurlOpt.HTTPSIG_*`, and `CurlWsOpt`.
+HTTP Message Signature authentication and algorithms are available through
+`constants.CurlAuth.CURLAUTH_HTTPSIG` and `constants.CurlHttpSig`.
+The obsolete TLS-SRP options (`TLSAUTH_*` and `PROXY_TLSAUTH_*`) were removed
+from upstream curl and are no longer exported in `CurlOpt`.
+
+To regenerate `CurlOpt` and `CurlInfo` from a local patched build:
+
+```sh
+CURL_HEADER_PATH=../curl-impersonate/build/deps/src/curl/include/curl/curl.h npm run gen:ffi-consts
+```
