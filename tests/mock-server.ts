@@ -2,6 +2,7 @@
  * Mock HTTP server for testing
  * Mimics httpbin.org endpoints
  */
+import { gzipSync, deflateSync, brotliCompressSync } from "node:zlib";
 import Fastify, { type FastifyInstance } from "fastify";
 
 let server: FastifyInstance | null = null;
@@ -71,6 +72,15 @@ export async function startMockServer(port = 0): Promise<number> {
   server.addContentTypeParser(/^multipart\/form-data/i, { parseAs: "buffer" }, (request, body, done) => {
     done(null, parseMultipartBody(body as Buffer, request.headers["content-type"] || ""));
   });
+
+  for (const [encoding, compress] of Object.entries({
+    gzip: gzipSync, deflate: deflateSync, br: brotliCompressSync,
+  })) {
+    server.get(`/compressed/${encoding}`, async (request, reply) => {
+      const body = Buffer.from("A streamed compressed response.\n".repeat(100));
+      return reply.header("Content-Encoding", encoding).send(compress(body));
+    });
+  }
 
   // GET endpoint - returns request info
   server.get("/get", async (request, reply) => {

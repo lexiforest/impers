@@ -332,9 +332,12 @@ await session.close();
 | `akamai` | `string` | Akamai HTTP/2 fingerprint string |
 | `extraFp` | `ExtraFingerprint` | Fine-grained fingerprint options |
 | `stream` | `boolean` | Do not buffer response content |
-| `contentCallback` | `(chunk: Buffer) => void` | Callback for response body chunks |
+| `contentCallback` | `(chunk: Buffer) => void` | Callback for response body chunks; honors `decodeContent` |
+| `decodeContent` | `boolean` | Decode buffered and callback response bodies using libcurl (default: true); false returns compressed bytes |
 | `headerCallback` | `(chunk: Buffer) => void` | Callback for raw response header chunks |
 | `httpVersion` | `string` | Force HTTP version ("1.0", "1.1", "2", "3") |
+
+Decoding support depends on the compression libraries compiled into libcurl. Response headers retain the server's original `Content-Encoding` and `Content-Length`, even when the body is decoded.
 
 ### Response Object
 

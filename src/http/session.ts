@@ -26,12 +26,6 @@ import {
   FingerprintManager,
   resolveNativeImpersonateTarget,
 } from "../fingerprints.js";
-import {
-  brotliDecompressSync,
-  gunzipSync,
-  inflateRawSync,
-  inflateSync,
-} from "node:zlib";
 import type {
   RequestOptions,
   SessionOptions,
@@ -147,6 +141,16 @@ export class Session {
 
       // Set headers
       const headerList = this.buildHeaders(mergedOptions, fingerprint);
+      // Native profiles supply their own default headers when no override exists.
+      const nativeDefaultHeaders = !fingerprint
+        && typeof mergedOptions.impersonate === "string"
+        && mergedOptions.defaultHeaders !== false;
+      // Otherwise preserve an explicitly empty acceptEncoding without letting
+      // ACCEPT_ENCODING generate a new header when enabling decoding below.
+      if (!nativeDefaultHeaders
+        && !headerList.some((header) => /^accept-encoding[:;]/i.test(header))) {
+        headerList.push("Accept-Encoding:");
+      }
       if (headerList.length > 0) {
         const slist = new SList();
         headerList.forEach((h) => slist.append(h));
@@ -192,6 +196,11 @@ export class Session {
 
       // Set impersonation
       this.setImpersonation(curl, mergedOptions, fingerprint);
+
+      // Decode before the write callback so streaming and buffered bodies agree.
+      // Explicit headers above preserve the requested encoding list and order.
+      curl.setOpt(CurlOpt.ACCEPT_ENCODING, "");
+      curl.setOpt(CurlOpt.HTTP_CONTENT_DECODING, mergedOptions.decodeContent !== false ? 1 : 0);
 
       // Set raw curl options
       if (mergedOptions.curlOptions) {
@@ -273,7 +282,7 @@ export class Session {
       const elapsed = (Date.now() - startTime) / 1000;
 
       const rawHeaders: Buffer = Buffer.concat(headerChunks);
-      let content: Buffer = Buffer.concat(bodyChunks);
+      const content: Buffer = Buffer.concat(bodyChunks);
 
       // Split raw headers into per-response segments for redirect history
       const segments = Headers.splitRawByResponse(rawHeaders);
@@ -313,18 +322,8 @@ export class Session {
         }
       }
 
-      // Use only the last segment's headers for content decoding
+      // Use the final response headers
       const lastSegment = segments.length > 0 ? segments[segments.length - 1] : null;
-
-      if (!mergedOptions.stream && mergedOptions.decodeContent !== false) {
-        const encoding = lastSegment
-          ? lastSegment.headers.get("content-encoding")
-          : Headers.fromRaw(rawHeaders).get("content-encoding");
-        const decoded = this.decodeContent(content, encoding);
-        if (decoded) {
-          content = decoded;
-        }
-      }
 
       const response = new Response({
         content,
@@ -459,55 +458,6 @@ export class Session {
       ...options,
       headers: options.headers, // Will be merged separately with session headers
     };
-  }
-
-  private decodeContent(content: Buffer, encodingHeader: string | null): Buffer | null {
-    if (!encodingHeader || content.length === 0) {
-      return null;
-    }
-
-    const encodings = encodingHeader
-      .split(",")
-      .map((value) => value.trim().toLowerCase())
-      .filter(Boolean)
-      .map((value) => value.split(";")[0]?.trim() || "")
-      .filter(Boolean);
-
-    if (encodings.length === 0) {
-      return null;
-    }
-
-    const supported = new Set(["gzip", "deflate", "br", "identity"]);
-    for (const encoding of encodings) {
-      if (!supported.has(encoding)) {
-        return null;
-      }
-    }
-
-    let decoded = content;
-    for (let i = encodings.length - 1; i >= 0; i -= 1) {
-      const encoding = encodings[i];
-      if (encoding === "identity") {
-        continue;
-      }
-      if (encoding === "gzip") {
-        decoded = gunzipSync(decoded);
-        continue;
-      }
-      if (encoding === "deflate") {
-        try {
-          decoded = inflateSync(decoded);
-        } catch {
-          decoded = inflateRawSync(decoded);
-        }
-        continue;
-      }
-      if (encoding === "br") {
-        decoded = brotliDecompressSync(decoded);
-      }
-    }
-
-    return decoded;
   }
 
   /**

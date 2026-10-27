@@ -1,6 +1,7 @@
 /**
  * Tests for HTTP requests using Session class
  */
+import { gzipSync, deflateSync, brotliCompressSync } from "node:zlib";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +21,69 @@ describe("Session", () => {
 
   afterEach(async () => {
     await session.close();
+  });
+
+  describe("content decoding", () => {
+    const body = Buffer.from("A streamed compressed response.\n".repeat(100));
+    const encodings = { gzip: gzipSync, deflate: deflateSync, br: brotliCompressSync };
+
+    it.each(Object.entries(encodings))(
+      "decodes %s consistently for callbacks and buffered responses",
+      async (encoding, compress) => {
+        for (const decodeContent of [undefined, true, false]) {
+          for (const stream of [false, true]) {
+            const chunks: Buffer[] = [];
+            const response = await session.get(`${globalThis.TEST_SERVER_URL}/compressed/${encoding}`, {
+              decodeContent,
+              stream,
+              contentCallback: (chunk) => { chunks.push(Buffer.from(chunk)); },
+            });
+            const expected = decodeContent === false ? compress(body) : body;
+            expect(response.status).toBe(200);
+            expect(Buffer.concat(chunks)).toEqual(expected);
+            if (!stream) expect(response.content).toEqual(expected);
+          }
+        }
+      }
+    );
+
+    it("honors decoding settings after native impersonation", async () => {
+      for (const decodeContent of [true, false]) {
+        const chunks: Buffer[] = [];
+        const response = await session.get(`${globalThis.TEST_SERVER_URL}/compressed/gzip`, {
+          impersonate: "chrome",
+          decodeContent,
+          contentCallback: (chunk) => { chunks.push(Buffer.from(chunk)); },
+        });
+        const expected = decodeContent ? body : gzipSync(body);
+        expect(response.content).toEqual(expected);
+        expect(Buffer.concat(chunks)).toEqual(expected);
+      }
+    });
+
+    it.each(["chrome", "firefox", "safari"])(
+      "preserves %s profile headers when acceptEncoding is empty",
+      async (impersonate) => {
+        const response = await session.get(`${globalThis.TEST_SERVER_URL}/headers`, {
+          impersonate,
+          acceptEncoding: "",
+        });
+        const json = response.json() as { headers: Record<string, string> };
+        expect(json.headers["accept-encoding"]).toContain("gzip");
+        expect(json.headers["accept-encoding"]).toContain("br");
+      }
+    );
+
+    it.each([
+      { options: {}, expected: "gzip, deflate, br" },
+      { options: { acceptEncoding: "gzip" }, expected: "gzip" },
+      { options: { acceptEncoding: "" }, expected: undefined },
+      { options: { headers: { "Accept-Encoding": "br, gzip" } }, expected: "br, gzip" },
+    ])("preserves the requested Accept-Encoding: $expected", async ({ options, expected }) => {
+      const response = await session.get(`${globalThis.TEST_SERVER_URL}/headers`, options);
+      const json = response.json() as { headers: Record<string, string> };
+      expect(json.headers["accept-encoding"]).toBe(expected);
+    });
   });
 
   describe("GET requests", () => {

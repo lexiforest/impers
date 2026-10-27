@@ -158,7 +158,7 @@ export interface RequestOptions {
   // Streaming
   /** Enable streaming response */
   stream?: boolean;
-  /** Content callback for streaming */
+  /** Content callback for streaming; honors decodeContent */
   contentCallback?: (chunk: Buffer) => void;
   /** Header callback for raw response header chunks */
   headerCallback?: (chunk: Buffer) => void;
@@ -186,7 +186,7 @@ export interface RequestOptions {
   userAgent?: string;
   /** Accept-Encoding header (default: "gzip, deflate, br") */
   acceptEncoding?: string;
-  /** Decode response content automatically (default: true) */
+  /** Decode buffered and callback response content using libcurl (default: true) */
   decodeContent?: boolean;
 
   // Raw curl options (escape hatch)
