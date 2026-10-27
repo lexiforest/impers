@@ -1,3 +1,4 @@
+import { jest } from "@jest/globals";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +7,8 @@ import {
   NATIVE_IMPERSONATE_TARGETS,
   type Fingerprint,
 } from "../src/fingerprints.js";
+import { CurlHttpVersion, CurlOpt } from "../src/ffi/constants.js";
+import { Response } from "../src/http/response.js";
 import { Session } from "../src/http/session.js";
 
 const TLS_PEET_URL = "https://peet.impersonate.pro/api/all";
@@ -16,6 +19,7 @@ const CAPTURED_LABEL = "captured (runtime output)";
 const LIVE_TEST_TIMEOUT_MS = 30 * 60 * 1000;
 
 type JsonRecord = Record<string, unknown>;
+type FingerprintSources = Record<string, Partial<Record<"http2" | "http3", number>>>;
 type Mismatches = Record<string, string[]>;
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -81,11 +85,17 @@ async function requestJson(
   const response = await session.get(url, {
     headers: options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : undefined,
     impersonate: options.impersonate,
-    httpVersion: options.http3 ? "3" : undefined,
-    timeout: 30,
+    curlOptions: options.http3 ? {
+      [CurlOpt.HTTP_VERSION]: CurlHttpVersion.CURL_HTTP_VERSION_3ONLY,
+    } : undefined,
+    dohUrl: options.http3 ? "https://cloudflare-dns.com/dns-query" : undefined,
+    timeout: options.http3 ? 60 : 30,
   });
   if (response.statusCode >= 400) {
     throw new Error(`HTTP ${response.statusCode} from ${url}: ${response.text}`);
+  }
+  if (options.http3 && response.httpVersion !== CurlHttpVersion.CURL_HTTP_VERSION_3) {
+    throw new Error(`Expected HTTP/3 from ${url}, received ${response.httpVersionString}`);
   }
   return response.json();
 }
@@ -95,11 +105,15 @@ async function loadRawFingerprint(
   target: string,
   apiRoot: string,
   protocol: "http2" | "http3",
-  apiKey: string
+  apiKey: string,
+  sourceId?: number
 ): Promise<JsonRecord> {
-  const url = new URL(`${apiRoot.replace(/\/+$/, "")}/raw`);
-  url.searchParams.set("name", target);
-  url.searchParams.set("protocol", protocol);
+  const baseUrl = `${apiRoot.replace(/\/+$/, "")}/raw`;
+  const url = new URL(sourceId === undefined ? baseUrl : `${baseUrl}/${sourceId}`);
+  if (sourceId === undefined) {
+    url.searchParams.set("name", target);
+    url.searchParams.set("protocol", protocol);
+  }
 
   let payload: unknown;
   try {
@@ -260,13 +274,41 @@ function formatMismatches(mismatches: Mismatches): string {
 async function prepareLiveFingerprints(apiKey: string): Promise<{
   apiRoot: string;
   fingerprints: Record<string, Fingerprint>;
+  sources: FingerprintSources;
 }> {
   FingerprintManager.setApiKey(apiKey);
-  const updated = await FingerprintManager.updateFingerprints();
-  expect(updated).toBeGreaterThan(0);
+  const sources: FingerprintSources = {};
+  const get = Session.prototype.get;
+  // Capture metadata from the exact pages used to populate the runtime cache.
+  Session.prototype.get = async function (url, options) {
+    const response = await get.call(this, url, options);
+    const body: unknown = response.json();
+    if (isRecord(body)) {
+      const items = Array.isArray(body.items) ? body.items : body.data;
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          if (!isRecord(item)) continue;
+          const name = item.name || item.target;
+          if (typeof name !== "string") continue;
+          sources[name] = {};
+          for (const protocol of ["http2", "http3"] as const) {
+            const id = item[`${protocol}_source_id`];
+            if (typeof id === "number") sources[name][protocol] = id;
+          }
+        }
+      }
+    }
+    return response;
+  };
+  try {
+    const updated = await FingerprintManager.updateFingerprints();
+    expect(updated).toBeGreaterThan(0);
+  } finally {
+    Session.prototype.get = get;
+  }
   const fingerprints = FingerprintManager.loadFingerprints();
   expect(Object.keys(fingerprints).length).toBeGreaterThan(0);
-  return { apiRoot: FingerprintManager.getApiRoot(), fingerprints };
+  return { apiRoot: FingerprintManager.getApiRoot(), fingerprints, sources };
 }
 
 async function verifyTargets(
@@ -274,7 +316,8 @@ async function verifyTargets(
   fingerprints: Record<string, Fingerprint>,
   apiRoot: string,
   apiKey: string,
-  forceHttp3: boolean
+  forceHttp3: boolean,
+  sources: FingerprintSources
 ): Promise<void> {
   expect(targets.length).toBeGreaterThan(0);
   const mismatches: Mismatches = {};
@@ -288,7 +331,8 @@ async function verifyTargets(
         target,
         apiRoot,
         http3 ? "http3" : "http2",
-        apiKey
+        apiKey,
+        sources[target]?.[http3 ? "http3" : "http2"]
       );
       const endpoint = rawPayload.source === "ping" ? PING_FP_URL : TLS_PEET_URL;
       const capturedPayload = await requestJson(session, endpoint, {
@@ -322,6 +366,7 @@ describe("live fingerprint verification", () => {
   });
 
   afterEach(() => {
+    jest.restoreAllMocks();
     if (previousConfigDir === undefined) {
       delete process.env.IMPERSONATE_CONFIG_DIR;
     } else {
@@ -330,21 +375,126 @@ describe("live fingerprint verification", () => {
     rmSync(configDir, { recursive: true, force: true });
   });
 
+  function jsonResponse(payload: unknown): Response {
+    return new Response({ statusCode: 200, content: Buffer.from(JSON.stringify(payload)) });
+  }
+
+  it.each(["http2", "http3"] as const)("loads the linked %s capture by source ID", async (protocol) => {
+    const payload = { name: "testing", source: "ping", fingerprint: { protocol } };
+    const get = jest.spyOn(Session.prototype, "get").mockResolvedValue(jsonResponse(payload));
+    const session = new Session();
+    try {
+      expect(await loadRawFingerprint(session, "testing", "https://api.test/", protocol, "test-key", 123))
+        .toEqual(payload);
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(get.mock.calls[0][0]).toBe("https://api.test/raw/123");
+      expect(get.mock.calls[0][1]?.headers).toEqual({ Authorization: "Bearer test-key" });
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("uses name and protocol for profiles without source metadata", async () => {
+    const get = jest.spyOn(Session.prototype, "get").mockResolvedValue(
+      jsonResponse({ name: "testing", fingerprint: {} })
+    );
+    const session = new Session();
+    try {
+      await loadRawFingerprint(session, "testing", "https://api.test", "http3", "test-key");
+      expect(get.mock.calls[0][0]).toBe("https://api.test/raw?name=testing&protocol=http3");
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("does not substitute another capture when the linked source fails", async () => {
+    const get = jest.spyOn(Session.prototype, "get").mockRejectedValue(new Error("capture not found"));
+    const session = new Session();
+    try {
+      await expect(loadRawFingerprint(session, "testing", "https://api.test", "http2", "test-key", 123))
+        .rejects.toThrow("capture not found");
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(get.mock.calls[0][0]).toBe("https://api.test/raw/123");
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("retains source IDs from the same paginated responses as the cached profiles", async () => {
+    const get = jest.spyOn(Session.prototype, "get")
+      .mockResolvedValueOnce(jsonResponse({
+        items: [{ name: "testing", http2_source_id: 123, http3_source_id: 456, fingerprint: { client: "first" } }],
+        pagination: { has_more: true, next_skip: 100 },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          { target: "testing2", http2_source_id: 789, http3_source_id: null, fingerprint: { client: "second" } },
+          { name: "legacy", fingerprint: { client: "legacy" } },
+        ],
+        pagination: { has_more: false },
+      }));
+    const { apiRoot, fingerprints, sources } = await prepareLiveFingerprints("test-key");
+    expect(sources).toEqual({ testing: { http2: 123, http3: 456 }, testing2: { http2: 789 }, legacy: {} });
+    expect(fingerprints.testing.client).toBe("first");
+    expect(fingerprints.testing2.client).toBe("second");
+    expect(get.mock.calls.map(([url]) => url)).toEqual([
+      `${apiRoot}/fingerprints?skip=0&limit=100`,
+      `${apiRoot}/fingerprints?skip=100&limit=100`,
+    ]);
+    expect(Session.prototype.get).toBe(get);
+  });
+
+  it("restores the request method if the fingerprint update fails", async () => {
+    const get = jest.spyOn(Session.prototype, "get").mockRejectedValue(new Error("update failed"));
+    await expect(prepareLiveFingerprints("test-key")).rejects.toThrow("update failed");
+    expect(Session.prototype.get).toBe(get);
+  });
+
+  it("requires HTTP/3 without fallback and uses DoH with a 60-second timeout", async () => {
+    const response = jsonResponse({ ok: true });
+    Object.defineProperty(response, "httpVersion", { value: CurlHttpVersion.CURL_HTTP_VERSION_3 });
+    const get = jest.spyOn(Session.prototype, "get").mockResolvedValue(response);
+    const session = new Session();
+    try {
+      expect(await requestJson(session, "https://capture.test", { impersonate: "testing", http3: true }))
+        .toEqual({ ok: true });
+      expect(get.mock.calls[0][1]).toMatchObject({
+        impersonate: "testing",
+        curlOptions: { [CurlOpt.HTTP_VERSION]: CurlHttpVersion.CURL_HTTP_VERSION_3ONLY },
+        dohUrl: "https://cloudflare-dns.com/dns-query",
+        timeout: 60,
+      });
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("rejects a non-HTTP/3 capture before comparing fingerprints", async () => {
+    jest.spyOn(Session.prototype, "get").mockResolvedValue(jsonResponse({}));
+    const session = new Session();
+    try {
+      await expect(requestJson(session, "https://capture.test", { http3: true }))
+        .rejects.toThrow("Expected HTTP/3");
+    } finally {
+      await session.close();
+    }
+  });
+
   liveTest("test_live_fingerprint_data_matches_runtime_output", async () => {
     const apiKey = process.env.IMPERSONATE_API_KEY!;
-    const { apiRoot, fingerprints } = await prepareLiveFingerprints(apiKey);
+    const { apiRoot, fingerprints, sources } = await prepareLiveFingerprints(apiKey);
     const presetTargets = new Set(
       NATIVE_IMPERSONATE_TARGETS.map((target) => target.target_name)
     );
     const customTargets = Object.keys(fingerprints)
       .filter((target) => !presetTargets.has(target))
       .sort();
-    await verifyTargets(customTargets, fingerprints, apiRoot, apiKey, false);
+    await verifyTargets(customTargets, fingerprints, apiRoot, apiKey, false, sources);
   }, LIVE_TEST_TIMEOUT_MS);
 
   liveTest("test_live_http3_fingerprint_data_matches_runtime_output", async () => {
     const apiKey = process.env.IMPERSONATE_API_KEY!;
-    const { apiRoot, fingerprints } = await prepareLiveFingerprints(apiKey);
+    const { apiRoot, fingerprints, sources } = await prepareLiveFingerprints(apiKey);
     const presetTargets = new Set(
       NATIVE_IMPERSONATE_TARGETS.map((target) => target.target_name)
     );
@@ -354,6 +504,6 @@ describe("live fingerprint verification", () => {
       )
       .map(([target]) => target)
       .sort();
-    await verifyTargets(customHttp3Targets, fingerprints, apiRoot, apiKey, true);
+    await verifyTargets(customHttp3Targets, fingerprints, apiRoot, apiKey, true, sources);
   }, LIVE_TEST_TIMEOUT_MS);
 });
