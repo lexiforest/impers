@@ -7,7 +7,9 @@ import {
   NATIVE_IMPERSONATE_TARGETS,
   type Fingerprint,
 } from "../src/fingerprints.js";
-import { CurlHttpVersion, CurlOpt } from "../src/ffi/constants.js";
+import { CurlHttpVersion, CurlOpt, CurlSslOpt } from "../src/ffi/constants.js";
+import { libcurlLibraryPath } from "../src/ffi/libcurl.js";
+import { Curl } from "../src/core/easy.js";
 import { Response } from "../src/http/response.js";
 import { Session } from "../src/http/session.js";
 
@@ -82,15 +84,31 @@ async function requestJson(
   url: string,
   options: { apiKey?: string; impersonate?: string; http3?: boolean } = {}
 ): Promise<unknown> {
-  const response = await session.get(url, {
-    headers: options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : undefined,
-    impersonate: options.impersonate,
-    curlOptions: options.http3 ? {
-      [CurlOpt.HTTP_VERSION]: CurlHttpVersion.CURL_HTTP_VERSION_3ONLY,
-    } : undefined,
-    dohUrl: options.http3 ? "https://cloudflare-dns.com/dns-query" : undefined,
-    timeout: options.http3 ? 60 : 30,
-  });
+  // CURL_ERROR_SIZE is 256; keep a distinct buffer alive for each transfer.
+  const errorBuffer = Buffer.alloc(256);
+  let response: Response;
+  try {
+    response = await session.get(url, {
+      headers: options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : undefined,
+      impersonate: options.impersonate,
+      curlOptions: {
+        [CurlOpt.ERRORBUFFER]: errorBuffer,
+        ...(options.http3 ? { [CurlOpt.HTTP_VERSION]: CurlHttpVersion.CURL_HTTP_VERSION_3ONLY } : {}),
+      },
+      dohUrl: options.http3 ? "https://cloudflare-dns.com/dns-query" : undefined,
+      timeout: options.http3 ? 60 : 30,
+    });
+  } catch (error) {
+    const end = errorBuffer.indexOf(0);
+    const detail = errorBuffer.subarray(0, end < 0 ? errorBuffer.length : end).toString("utf8");
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Request failed: target=${options.impersonate ?? "none"} url=${url} ` +
+      `http3=${Boolean(options.http3)} doh=${options.http3 ? "https://cloudflare-dns.com/dns-query" : "none"}\n` +
+      `${message}${detail ? `\nlibcurl: ${detail}` : ""}`,
+      { cause: error }
+    );
+  }
   if (response.statusCode >= 400) {
     throw new Error(`HTTP ${response.statusCode} from ${url}: ${response.text}`);
   }
@@ -359,6 +377,28 @@ describe("live fingerprint verification", () => {
   let previousConfigDir: string | undefined;
   let configDir: string;
 
+  beforeAll(() => {
+    if (!process.env.IMPERSONATE_API_KEY) return;
+    console.log(`[live] platform=${process.platform} arch=${process.arch} node=${process.version}`);
+    console.log(`[live] libcurl path=${libcurlLibraryPath}`);
+    console.log(`[live] ${Curl.version()}`);
+    if (process.platform === "win32") {
+      const curl = new Curl();
+      try {
+        for (const name of ["SSL_OPTIONS", "PROXY_SSL_OPTIONS"] as const) {
+          try {
+            curl.setOpt(CurlOpt[name], CurlSslOpt.CURLSSLOPT_NATIVE_CA);
+            console.log(`[live] ${name}: native CA option accepted`);
+          } catch (error) {
+            console.warn(`[live] ${name}: native CA option rejected: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      } finally {
+        curl.cleanup();
+      }
+    }
+  });
+
   beforeEach(() => {
     previousConfigDir = process.env.IMPERSONATE_CONFIG_DIR;
     configDir = mkdtempSync(join(tmpdir(), "impers-live-fingerprints-"));
@@ -464,6 +504,38 @@ describe("live fingerprint verification", () => {
         dohUrl: "https://cloudflare-dns.com/dns-query",
         timeout: 60,
       });
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("reports request context and the native error buffer without logging API headers", async () => {
+    const cause = new Error("certificate verification failed");
+    jest.spyOn(Session.prototype, "get").mockImplementation(async (_url, options) => {
+      const buffer = options?.curlOptions?.[CurlOpt.ERRORBUFFER] as Buffer;
+      buffer.write("unable to get local issuer certificate\0ignored trailing bytes");
+      throw cause;
+    });
+    const session = new Session();
+    try {
+      await expect(requestJson(session, "https://capture.test", {
+        impersonate: "testing", http3: true, apiKey: "secret-test-key",
+      })).rejects.toMatchObject({
+        cause,
+        message: "Request failed: target=testing url=https://capture.test http3=true " +
+          "doh=https://cloudflare-dns.com/dns-query\ncertificate verification failed\n" +
+          "libcurl: unable to get local issuer certificate",
+      });
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("reads error details written by the native library", async () => {
+    const session = new Session();
+    try {
+      await expect(requestJson(session, "unsupported://example.test"))
+        .rejects.toThrow(/libcurl: .*unsupported/i);
     } finally {
       await session.close();
     }
