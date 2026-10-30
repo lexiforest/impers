@@ -6,7 +6,7 @@ import { curl_easy_getinfo_slist, curl_slist_free_all, koffi } from "../src/ffi/
 import { NATIVE_IMPERSONATE_TARGETS } from "../src/fingerprints.js";
 import { AsyncWebSocket, WebSocketMessageType } from "../src/websocket/websocket.js";
 
-describe("curl-impersonate 2.3.1 compatibility", () => {
+describe("curl-impersonate 2.3.2 compatibility", () => {
   it("reads native string, long, and list output parameters", () => {
     const curl = new Curl();
     try {
