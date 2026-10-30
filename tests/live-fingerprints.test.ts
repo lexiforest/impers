@@ -7,9 +7,7 @@ import {
   NATIVE_IMPERSONATE_TARGETS,
   type Fingerprint,
 } from "../src/fingerprints.js";
-import { CurlHttpVersion, CurlOpt, CurlSslOpt } from "../src/ffi/constants.js";
-import { libcurlLibraryPath } from "../src/ffi/libcurl.js";
-import { Curl } from "../src/core/easy.js";
+import { CurlHttpVersion, CurlOpt } from "../src/ffi/constants.js";
 import { Response } from "../src/http/response.js";
 import { Session } from "../src/http/session.js";
 
@@ -376,28 +374,6 @@ const liveTest = process.env.IMPERSONATE_API_KEY ? test : test.skip;
 describe("live fingerprint verification", () => {
   let previousConfigDir: string | undefined;
   let configDir: string;
-
-  beforeAll(() => {
-    if (!process.env.IMPERSONATE_API_KEY) return;
-    console.log(`[live] platform=${process.platform} arch=${process.arch} node=${process.version}`);
-    console.log(`[live] libcurl path=${libcurlLibraryPath}`);
-    console.log(`[live] ${Curl.version()}`);
-    if (process.platform === "win32") {
-      const curl = new Curl();
-      try {
-        for (const name of ["SSL_OPTIONS", "PROXY_SSL_OPTIONS"] as const) {
-          try {
-            curl.setOpt(CurlOpt[name], CurlSslOpt.CURLSSLOPT_NATIVE_CA);
-            console.log(`[live] ${name}: native CA option accepted`);
-          } catch (error) {
-            console.warn(`[live] ${name}: native CA option rejected: ${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
-      } finally {
-        curl.cleanup();
-      }
-    }
-  });
 
   beforeEach(() => {
     previousConfigDir = process.env.IMPERSONATE_CONFIG_DIR;

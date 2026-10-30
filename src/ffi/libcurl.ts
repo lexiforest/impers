@@ -2,7 +2,6 @@ import koffi from "koffi";
 import { resolveLibcurlPath } from "../utils/platform.js";
 
 const libraryPath = await resolveLibcurlPath();
-export { libraryPath as libcurlLibraryPath };
 const lib = koffi.load(libraryPath);
 let asyncLibraryPinned = false;
 const koffiTypeSuffix = `${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
