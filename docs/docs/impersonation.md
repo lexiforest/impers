@@ -5,7 +5,7 @@ sidebar_label: Impersonation
 
 # Supported Impersonate Browsers
 
-`impers` supports the browser presets in [curl-impersonate 2.3.1](https://github.com/lexiforest/curl-impersonate/tree/v2.3.1).
+`impers` supports the browser presets in [curl-impersonate 2.3.2](https://github.com/lexiforest/curl-impersonate/tree/v2.3.2).
 
 The current aliases are `chrome` → `chrome152` (Windows), `firefox` →
 `firefox155` (Windows), `safari` → `safari270` (macOS), and `safari_ios` →
